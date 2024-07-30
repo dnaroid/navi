@@ -15,12 +15,18 @@
 #include "Touch.h"
 #include "Address.h"
 #include "Router.h"
+#include <TinyGsmClient.h>
+
 
 auto spiDisplay = SPIClass(HSPI);
 auto spiSD = SPIClass(VSPI);
 
 TinyGPSPlus gps;
 HardwareSerial gpsSerial(1);
+HardwareSerial atSerial(2);
+
+TinyGsm modem(atSerial);
+TinyGsmClient client(modem);
 
 LSM303 compass;
 UI ui;
@@ -70,8 +76,13 @@ void drawMyMarker() {
 
 void drawTargetMarker() {
   if (!targetLoc.lon) { return; }
+  constexpr int radius = 10;
+  constexpr int dy = -(radius * 1.5);
+  constexpr int color = TFT_BLUE;
   Point p = coord::locationToScreen(targetLoc, centerLoc, zoom);
-  TFT.fillCircle(p.x, p.y, MY_MARKER_R,TFT_GREEN);
+  TFT.fillCircle(p.x, p.y + dy, radius, color);
+  TFT.fillTriangle(p.x - radius, p.y + dy, p.x + radius, p.y + dy, p.x, p.y, color);
+  TFT.fillCircle(p.x, p.y + dy, radius / 3, TFT_WHITE);
 }
 
 #define circleRadius 5
@@ -84,21 +95,12 @@ void drawRoute() {
   TFT.fillCircle(p1.x, p1.y, circleRadius, TFT_BLUE);
   for (size_t i = 1; i < route.size(); i++) {
     const Point p2 = coord::locationToScreen(route[i], centerLoc, zoom);
-    float dx = p1.x - p2.x;
-    float dy = p1.y - p2.y;
-    float distance = sqrt(dx * dx + dy * dy);
-    // Расставляем дополнительные круги, если расстояние между точками больше, чем зазор
-    if (distance > (circleRadius * 2 + gapPixels)) {
-      int numAdditionalCircles = (int)((distance - circleRadius * 2) / (circleRadius * 2 + gapPixels));
-      for (int j = 1; j <= numAdditionalCircles; j++) {
-        float newX = p1.x + j * ((dx / numAdditionalCircles));
-        float newY = p1.y + j * ((dy / numAdditionalCircles));
-        TFT.fillCircle(newX, newY, circleRadius, TFT_BLUE);
-      }
-    }
-    p1 = p2;
-    TFT.fillCircle(p1.x, p1.y, 5, TFT_BLUE);
     TFT.drawLine(p1.x, p1.y, p2.x, p2.y,TFT_BLUE);
+    TFT.drawLine(p1.x, p1.y + 1, p2.x, p2.y + 1,TFT_BLUE);
+    TFT.drawLine(p1.x, p1.y - 1, p2.x, p2.y - 1,TFT_BLUE);
+    TFT.drawLine(p1.x + 1, p1.y, p2.x + 1, p2.y,TFT_BLUE);
+    TFT.drawLine(p1.x - 1, p1.y, p2.x - 1, p2.y,TFT_BLUE);
+    p1 = p2;
   }
 }
 
@@ -244,7 +246,7 @@ void setup() {
   TFT.setFreeFont(&FreeMono9pt7b);
   TFT.setCursor(0, 20);
 
-  TFT.print("Init UI");
+  TFT.println("Init UI");
   ui.init(TFT);
   ui.addButton('+', 10, 10).enabled(zoom < 18).onPress(onZoomBtnPressed);
   ui.addButton('-', 10, 10 + 45).enabled(zoom > 12).onPress(onZoomBtnPressed);
@@ -289,6 +291,55 @@ void setup() {
 
   TFT.println("Init GPS");
   gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
+
+  TFT.println("Init GSM");
+  // TinyGsmAutoBaud(atSerial, GSM_AUTOBAUD_MIN, GSM_AUTOBAUD_MAX);
+  // atSerial.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
+  atSerial.begin(9600, SERIAL_8N1, MODEM_RX, MODEM_TX);
+  delay(3000);
+  TFT.println("Initializing modem...");
+  modem.restart();
+  String modemMOdel = modem.getModemName();
+  TFT.print("Modem model: ");
+  TFT.println(modemMOdel);
+  const char apn[] = "internet";
+  const char user[] = "internet";
+  const char pass[] = "internet";
+  // modem.gprsConnect(apn, user, pass);
+  TFT.print("Waiting for network...");
+  // if (!modem.waitForNetwork()) {
+  //   TFT.println(" fail");
+  //   delay(10000);
+  //   return;
+  // }
+  if (!modem.gprsConnect(apn, user, pass)) {
+    TFT.println("Failed to connect to GPRS");
+    while (true);
+  }
+  // Проверка подключения
+  if (modem.isNetworkConnected()) {
+    TFT.println("Network connected");
+  }
+
+  if (modem.isGprsConnected()) {
+    TFT.println("GPRS connected");
+  }
+  String operatorName = modem.getOperator();
+  TFT.print("Operator: ");
+  TFT.println(operatorName);
+
+  int signalQuality = modem.getSignalQuality();
+  TFT.print("Signal quality: ");
+  TFT.println(signalQuality);
+
+  String modemInf = modem.getModemInfo();
+  TFT.print("Modem Info: ");
+  TFT.println(modemInf);
+
+  IPAddress localIP = modem.localIP();
+  TFT.print("Local IP: ");
+  TFT.println(localIP);
+  TFT.println(" success");
 
   TFT.println("Init compass");
   compass.init();

@@ -441,7 +441,7 @@ public:
                drawFastVLine(int32_t x, int32_t y, int32_t h, uint32_t color),
                drawFastHLine(int32_t x, int32_t y, int32_t w, uint32_t color),
                fillRect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color),
-               drawThickLine(int32_t, int32_t, int32_t, int32_t, uint32_t, float);
+               drawThickLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color, float wd);
 
 
   virtual int16_t drawChar(uint16_t uniCode, int32_t x, int32_t y, uint8_t font),

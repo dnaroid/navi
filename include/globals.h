@@ -4,6 +4,8 @@
 #include "secrets.h"
 #include "TFT_eSPI.h"
 
+#define TINY_GSM_MODEM_SIM800
+
 /// --- pins
 #define SD_CS 18
 #define SD_MOSI 17
@@ -21,6 +23,9 @@
 
 #define GPS_RX 47
 #define GPS_TX 48
+
+#define MODEM_TX 4
+#define MODEM_RX 5
 
 /// --- screen
 #define SCREEN_WIDTH 320
@@ -57,8 +62,31 @@
 /// --- GPS
 #define MIN_COORD_CHANGE 0.0001
 
+/// --- GPRS
+#define MODEM_TX 4
+#define MODEM_RX 5
+
 /// remote
 #define ADDR_SEARCH_LIMIT 9
+
+#define TINY_GSM_RX_BUFFER 650
+
+// See all AT commands, if wanted
+#define DUMP_AT_COMMANDS
+
+// Define the serial console for debug prints, if needed
+#define TINY_GSM_DEBUG Serial
+// #define LOGGING  // <- Logging is for the HTTP library
+
+// Range to attempt to autobaud
+// NOTE:  DO NOT AUTOBAUD in production code.  Once you've established
+// communication, set a fixed baud rate using modem.setBaud(#).
+#define GSM_AUTOBAUD_MIN 9600
+#define GSM_AUTOBAUD_MAX 115200
+
+// Add a reception delay, if needed.
+// This may be needed for a fast processor at a slow baud rate.
+// #define TINY_GSM_YIELD() { delay(2); }
 
 struct Location {
   float lon;
