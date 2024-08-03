@@ -13,28 +13,37 @@
 #include "LSM303.h"
 #include "UI.h"
 #include "Touch.h"
-#include "Address.h"
-#include "Router.h"
-#include <TinyGsmClient.h>
-
+// #include "Router.h"
+// #include "A9G.h"
+#include <sqlite3.h>
+#include <sstream>
+#include "PathFinder.h"
 
 auto spiDisplay = SPIClass(HSPI);
 auto spiSD = SPIClass(VSPI);
 
-TinyGPSPlus gps;
+// TinyGPSPlus gps;
 HardwareSerial gpsSerial(1);
-HardwareSerial atSerial(2);
+// HardwareSerial atSerial(2);
 
-TinyGsm modem(atSerial);
-TinyGsmClient client(modem);
+// TinyGsm modem(atSerial);
+// TinyGsmClient client(modem);
 
 LSM303 compass;
 UI ui;
 Touch touch;
-Address address;
-Router router;
+// Router router;
+// auto a9g = A9G(gpsSerial);
+
+sqlite3* addrDb;
+char* zErrMsg = 0;
+int rc;
+const char* dbData = "Callback function called";
+std::vector<Address> foundAddrs; //todo make class
+PathFinder pathFinder;
 
 // global vars
+
 int zoom = 14;
 int angle = 0;
 int new_angle = 0;
@@ -50,6 +59,9 @@ unsigned long compassUpdateAfterMs;
 unsigned long gpsUpdateAfterMs;
 
 static char path_name[MAX_FILENAME_LENGTH];
+
+auto polishChars = "ąćęłńóśżźĄĆĘŁŃÓŚŻŹ";
+auto replacementChars = "acelnoszzACELNOSZZ";
 
 const char* getTilePath(int z, int x, int y) {
   std::snprintf(path_name, sizeof(path_name), "/tiles/%d/%d/%d.png", z, x, y);
@@ -85,14 +97,10 @@ void drawTargetMarker() {
   TFT.fillCircle(p.x, p.y + dy, radius / 3, TFT_WHITE);
 }
 
-#define circleRadius 5
-#define gapPixels 10
-
 void drawRoute() {
-  const std::vector<Location> route = router.getRoute();
+  const auto route = pathFinder.path;
   if (route.empty()) { return; }
   Point p1 = coord::locationToScreen(route[0], centerLoc, zoom);
-  TFT.fillCircle(p1.x, p1.y, circleRadius, TFT_BLUE);
   for (size_t i = 1; i < route.size(); i++) {
     const Point p2 = coord::locationToScreen(route[i], centerLoc, zoom);
     TFT.drawLine(p1.x, p1.y, p2.x, p2.y,TFT_BLUE);
@@ -124,7 +132,7 @@ void drawMap() {
 
 void showAddresses() {
   int id = 0;
-  for (const auto res : address.getResults()) {
+  for (const auto res : foundAddrs) {
     ui.findButtonById(id++).caption(res.name).visible(true);
   }
   ui.update();
@@ -144,7 +152,7 @@ void toggleKeyboard() {
 }
 
 void onAddresPressed(const Button& btn) {
-  centerLoc = address.getResults()[btn.id].location;
+  centerLoc = foundAddrs[btn.id].location;
   targetLoc = centerLoc;
   drawMap();
   for (int i = 0; i < ADDR_SEARCH_LIMIT; i++) ui.findButtonById(i).caption("").visible(false);
@@ -168,9 +176,29 @@ void onAddrBtnPressed(Button& btnAddr) {
 
 void onRouteBtnPressed(Button& _) {
   ui.update();
-  router.search(myLoc.lat ? myLoc : centerLoc, targetLoc, router.BIKE);
+  pathFinder.findPath(myLoc.lat ? myLoc : centerLoc, targetLoc);
   drawMap();
   ui.update();
+}
+
+void searchAddress(const String& text) {
+  foundAddrs.clear();
+  String modifiedText = text;
+  modifiedText.replace(' ', '%');
+  const String query = "SELECT str, num, lon, lat, details FROM addr WHERE alias LIKE '%"
+    + modifiedText
+    + "%' ORDER BY CAST(num AS INTEGER) ASC LIMIT "
+    + ADDR_SEARCH_LIMIT;
+  const char* queryCStr = query.c_str();
+  sqlite3_exec(addrDb, queryCStr,
+               [](void* data, int argc, char** argv, char** azColName) -> int {
+                 const String name = String(argv[0]) + " " + String(argv[1]) + " " + String(argv[4]);
+                 const float lon = atof(argv[2]);
+                 const float lat = atof(argv[3]);
+                 foundAddrs.push_back(Address{name, {lon, lat}});
+                 return 0;
+               }, (void*)dbData, &zErrMsg);
+  showAddresses();
 }
 
 void onAddrType(Button& btn) {
@@ -178,12 +206,9 @@ void onAddrType(Button& btn) {
   if (btn.text == "<") {
     inp.removeChar();
     ui.drawInput(inp);
-  } else if (btn.text == " ") {
-    inp.addChar('+');
-    ui.drawInput(inp);
   } else if (btn.text == ">") {
     ui.update();
-    if (address.search(inp.text, centerLoc)) showAddresses();
+    searchAddress(inp.text);
     toggleKeyboard();
   } else {
     inp.addChar(btn.text[0]);
@@ -220,14 +245,32 @@ void createKeyboard() {
         .onPress(onAddrType);
     }
   }
+  constexpr int addrH = SCREEN_HEIGHT / ADDR_SEARCH_LIMIT;
   for (int i = 0; i < ADDR_SEARCH_LIMIT; i++) // addresses
-    ui.addButton("", 0, i * 51,SCREEN_WIDTH, 50, i)
+    ui.addButton("", 0, i * addrH,SCREEN_WIDTH, addrH, i)
       .visible(false)
       .type('a')
       .onPress(onAddresPressed);
 }
 
+int dbOpen(const char* filename, sqlite3** db) {
+  int rc = sqlite3_open(filename, db);
+  if (rc) {
+    Serial.printf("Can't open database: %s\n", sqlite3_errmsg(*db));
+    return rc;
+  } else {
+    Serial.printf("Opened database successfully\n");
+  }
+  return rc;
+}
+
+// void secondCoreTask(void* pvParameters) {
+//   TFT.println("Init GPS/GSM");
+//   a9g.setup();
+// }
+
 void setup() {
+  delay(3000);
   Serial.begin(115200);
   delay(1000);
   int waitCount = 0;
@@ -237,9 +280,14 @@ void setup() {
   }
 
   print("--------------- started ---------------");
+  btStop(); // Bluetooth OFF
 
+  SPI.end();
   spiDisplay.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TFT_CS);
+  spiDisplay.setFrequency(80000000);
   TFT.init();
+  if (TFT.initDMA()) Serial.println("[DMA] Init ok.");
+  TFT.setAttribute(UTF8_SWITCH, 1);
   TFT.setRotation(2);
   TFT.fillScreen(TFT_BLACK);
   TFT.setTextColor(TFT_WHITE);
@@ -256,11 +304,27 @@ void setup() {
   ui.addInput(0, KEYBOARD_Y - 40,SCREEN_WIDTH,BUTTON_H, 'a').visible(false);
   createKeyboard();
 
-  TFT.print("Init card reader");
+  // TFT.println("Init GPS/GSM");
+  // gpsSerial.begin(115200, SERIAL_8N1, A9G_RX, A9G_TX);
+  // a9g.setup();
 
+  /*xTaskCreatePinnedToCore(
+    secondCoreTask, // Указатель на функцию задачи
+    "TaskOnCore1", // Название задачи
+    2048, // Размер стека задачи в байтах
+    NULL, // Параметры, передаваемые в задачу
+    1, // Приоритет задачи
+    NULL, // Дескриптор задачи
+    1 // Номер ядра: 0 или 1 (ESP32-S3 имеет два ядра)
+  );*/
+
+
+  TFT.print("Init card reader");
   spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
   int frq = 80000000;
+  // int frq = 10000000;
   while (!SD.begin(SD_CS, spiSD, frq) && frq > 1000000) {
+    // while (!SD.begin(SD_CS) && frq > 1000000) {
     frq -= 1000000;
     delay(100);
     TFT.print(".");
@@ -270,13 +334,21 @@ void setup() {
   print("SD speed:", frq);
   TFT.println(frq);
   TFT.println("Init SD card");
-
   while (SD.cardType() == CARD_NONE) {
     TFT.print(".");
     print("No SD card attached");
     delay(500);
   }
   TFT.println("SD card is OK");
+
+  TFT.println("Init DB");
+  sqlite3_initialize();
+  pathFinder.init();
+  if (dbOpen("/sd/addr.db", &addrDb)) return; //todo to class
+  if (rc != SQLITE_OK) {
+    sqlite3_close(addrDb);
+    return;
+  }
 
   TFT.println("Init touch");
   Wire.begin(I2C_SDA, I2C_SCL, 0);
@@ -289,9 +361,7 @@ void setup() {
     TFT.println("Touch is OK");
   }
 
-  TFT.println("Init GPS");
-  gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
-
+  /*
   TFT.println("Init GSM");
   // TinyGsmAutoBaud(atSerial, GSM_AUTOBAUD_MIN, GSM_AUTOBAUD_MAX);
   // atSerial.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
@@ -340,6 +410,7 @@ void setup() {
   TFT.print("Local IP: ");
   TFT.println(localIP);
   TFT.println(" success");
+  */
 
   TFT.println("Init compass");
   compass.init();
@@ -350,13 +421,13 @@ void setup() {
   TFT.println("Init cache");
   initializeCache();
 
-  TFT.println("Init WIFI");
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    TFT.println("Connecting to WiFi...");
-  }
-  TFT.println("Connected to WiFi");
+  // TFT.println("Init WIFI");
+  // WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  // while (WiFi.status() != WL_CONNECTED) {
+  //   delay(1000);
+  //   TFT.println("Connecting to WiFi...");
+  // }
+  // TFT.println("Connected to WiFi");
 
   TFT.println("Init done!");
 
@@ -372,6 +443,7 @@ void setup() {
 void loop() {
   now = millis();
   touch.update();
+  bool gps = false;
 
   if (now > compassUpdateAfterMs) {
     compass.read();
@@ -384,24 +456,27 @@ void loop() {
   }
 
   if (now > gpsUpdateAfterMs) {
-    while (gpsSerial.available() > 0) {
-      gps.encode(gpsSerial.read());
-    }
-    if (gps.location.isUpdated()) {
-      float gpsLat = gps.location.lat();
-      float gpsLon = gps.location.lng();
-      if (std::abs(myLoc.lat - gpsLat) > MIN_COORD_CHANGE || (std::abs(myLoc.lon - gpsLon) > MIN_COORD_CHANGE)) {
-        myLoc.lat = gpsLat;
-        myLoc.lon = gpsLon;
-        Button locBtn = ui.findButtonByText("L");
-        if (!locBtn.enabled()) { // todo: support the lost location case
-          locBtn.enabled(true);
-          ui.update();
-        }
-      }
-    }
+    gps = true;
+    // while (gpsSerial.available() > 0) {
+    //   gps.encode(gpsSerial.read());
+    // }
+    // if (gps.location.isUpdated()) {
+    //   float gpsLat = gps.location.lat();
+    //   float gpsLon = gps.location.lng();
+    //   if (std::abs(myLoc.lat - gpsLat) > MIN_COORD_CHANGE || (std::abs(myLoc.lon - gpsLon) > MIN_COORD_CHANGE)) {
+    //     myLoc.lat = gpsLat;
+    //     myLoc.lon = gpsLon;
+    //     Button locBtn = ui.findButtonByText("L");
+    //     if (!locBtn.enabled()) { // todo: support the lost location case
+    //       locBtn.enabled(true);
+    //       ui.update();
+    //     }
+    //   }
+    // }
     gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
   }
 
   if (ui.updateAfterMs != 0 && now > ui.updateAfterMs) ui.update();
+  // a9g.loop(gps);
+  delay(1);
 }

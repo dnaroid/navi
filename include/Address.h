@@ -7,12 +7,6 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
-
-struct SearchResult {
-  Location location;
-  String name;
-};
-
 class Address {
 public:
   Address() {

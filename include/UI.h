@@ -269,7 +269,7 @@ public:
   }
 
   unsigned long updateAfterMs;
-  static constexpr int maxCharsPerLine = 30;
+  static constexpr int maxCharsPerLine = 29;
 
 private:
   TFT_eSPI* _tft;

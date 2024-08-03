@@ -3,6 +3,7 @@
 #include "globals.h"
 #include <PNGdec.h>
 #include <SD.h>
+#include "globals.h"
 
 struct TileCacheEntry {
     char filename[MAX_FILENAME_LENGTH];
@@ -80,6 +81,17 @@ void pngDraw(PNGDRAW* pDraw) {
 }
 
 void drawPngTile(const char* filename, int x, int y) {
+#ifdef CACHE_DISABLED
+        int16_t rc = png.open(filename, pngOpen, pngClose, pngRead, pngSeek, pngDraw);
+        if (rc == PNG_SUCCESS) {
+            rc = png.decode(NULL, 0);
+            png.close();
+            strncpy(tileCache[cacheIndex].filename, filename, MAX_FILENAME_LENGTH);
+        } else {
+            print("! Failed to decode PNG: ", rc);
+        }
+        return;
+#else
     const TileCacheEntry* cachedTile = findInCache(filename);
     if (cachedTile) {
         TFT.pushImage(x, y, TILE_SIZE, TILE_SIZE, cachedTile->data);
@@ -98,5 +110,6 @@ void drawPngTile(const char* filename, int x, int y) {
     } else {
         print("! Failed to decode PNG: ", rc);
     }
+#endif
 }
 

@@ -23,9 +23,9 @@
 
 #define GPS_RX 47
 #define GPS_TX 48
-
-#define MODEM_TX 4
-#define MODEM_RX 5
+// #define A9G_PON 4
+// #define A9G_LOWP 5
+// #define A9G_RST 6
 
 /// --- screen
 #define SCREEN_WIDTH 320
@@ -52,12 +52,16 @@
 #define COMPASS_MAGNETIC_DECLINATION_M 43
 
 /// --- cache
+// #define CACHE_DISABLED
+#ifndef CACHE_DISABLED
 #define MAX_CACHE_SIZE 15
+#endif
 #define MAX_FILENAME_LENGTH 35
+
 
 /// --- timing
 #define COMPASS_UPDATE_PERIOD 1000
-#define GPS_UPDATE_PERIOD 1500
+#define GPS_UPDATE_PERIOD 10000
 
 /// --- GPS
 #define MIN_COORD_CHANGE 0.0001
@@ -67,7 +71,7 @@
 #define MODEM_RX 5
 
 /// remote
-#define ADDR_SEARCH_LIMIT 9
+#define ADDR_SEARCH_LIMIT 5
 
 #define TINY_GSM_RX_BUFFER 650
 
@@ -98,6 +102,11 @@ struct Point {
   int y;
 };
 
+struct Address {
+  String name;
+  Location location;
+};
+
 extern TFT_eSPI TFT;
 
 inline void print() {
@@ -111,5 +120,6 @@ void print(T first, Args... args) {
   Serial.println();
 }
 
+#define delay(ms) vTaskDelay(ms / portTICK_PERIOD_MS)
 
 #endif //GLOBALS_H
