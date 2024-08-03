@@ -286,7 +286,6 @@ void setup() {
   spiDisplay.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TFT_CS);
   spiDisplay.setFrequency(80000000);
   TFT.init();
-  if (TFT.initDMA()) Serial.println("[DMA] Init ok.");
   TFT.setAttribute(UTF8_SWITCH, 1);
   TFT.setRotation(2);
   TFT.fillScreen(TFT_BLACK);
@@ -294,8 +293,8 @@ void setup() {
   TFT.setFreeFont(&FreeMono9pt7b);
   TFT.setCursor(0, 20);
 
-  TFT.println("Init UI");
   ui.init(TFT);
+  TFT.println("Init UI");
   ui.addButton('+', 10, 10).enabled(zoom < 18).onPress(onZoomBtnPressed);
   ui.addButton('-', 10, 10 + 45).enabled(zoom > 12).onPress(onZoomBtnPressed);
   ui.addButton('L', 10, 10 + 45 * 2).enabled(false);

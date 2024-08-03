@@ -5539,7 +5539,6 @@ int16_t TFT_eSPI::drawString(const char* string, int32_t poX, int32_t poY, uint8
     uint16_t n = 0;
 
     while (n < len && c2 == 0) c2 = decodeUTF8((uint8_t*)string, &n, len - n);
-
     if ((c2 >= pgm_read_word(&gfxFont->first)) && (c2 <= pgm_read_word(&gfxFont->last))) {
       c2 -= pgm_read_word(&gfxFont->first);
       GFXglyph* glyph = &(((GFXglyph*)pgm_read_dword(&gfxFont->glyph))[c2]);
@@ -5569,6 +5568,7 @@ int16_t TFT_eSPI::drawString(const char* string, int32_t poX, int32_t poY, uint8
 
     while (n < len) {
       uint16_t uniCode = decodeUTF8((uint8_t*)string, &n, len - n);
+      Serial.println(uniCode);
       drawGlyph(uniCode);
     }
     _fillbg = fillbg; // restore state

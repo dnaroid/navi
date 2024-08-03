@@ -216,7 +216,7 @@ public:
     }
     _tft->setTextDatum(MC_DATUM);
     for (int i = 0; i < lines.size(); i++) {
-      _tft->drawString(lines[i], x + w / 2, y + (i * charHeight) + 8, font);
+      _tft->drawString(utf8(lines[i].c_str()), x + w / 2, y + (i * charHeight) + 8, font);
     }
   }
 
