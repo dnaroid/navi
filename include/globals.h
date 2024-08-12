@@ -58,7 +58,6 @@
 #endif
 #define MAX_FILENAME_LENGTH 35
 
-
 /// --- timing
 #define COMPASS_UPDATE_PERIOD 1000
 #define GPS_UPDATE_PERIOD 10000
@@ -72,6 +71,7 @@
 
 /// remote
 #define ADDR_SEARCH_LIMIT 5
+#define CAM_URL "http://192.168.4.1/jpg"
 
 #define TINY_GSM_RX_BUFFER 650
 

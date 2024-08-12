@@ -15,9 +15,13 @@
 #include "Touch.h"
 // #include "Router.h"
 // #include "A9G.h"
+#include <HTTPClient.h>
 #include <sqlite3.h>
 #include <sstream>
 #include "PathFinder.h"
+#include <TJpg_Decoder.h>
+#include <esp_now.h>
+
 
 auto spiDisplay = SPIClass(HSPI);
 auto spiSD = SPIClass(VSPI);
@@ -60,8 +64,27 @@ unsigned long gpsUpdateAfterMs;
 
 static char path_name[MAX_FILENAME_LENGTH];
 
-auto polishChars = "ąćęłńóśżźĄĆĘŁŃÓŚŻŹ";
-auto replacementChars = "acelnoszzACELNOSZZ";
+bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) {
+  TFT.pushImage(x, y, w, h, bitmap);
+  return true;
+}
+
+uint8_t imageData[240 * 240]; // Буфер для изображения
+
+// void onDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
+//   static int index = 0;
+//
+//   // Копируем данные в буфер
+//   memcpy(&imageData[index], incomingData, len);
+//   index += len;
+//
+//   // Если буфер заполнен, рисуем изображение
+//   if (index >= sizeof(imageData)) {
+//     TJpgDec.drawJpg(0, 0, imageData, 240 * 240);
+//     TFT.pushImage(0, 0, 240, 240, imageData); // Пример для 240x240 дисплея
+//     index = 0; // Сбрасываем индекс для следующего изображения
+//   }
+// }
 
 const char* getTilePath(int z, int x, int y) {
   std::snprintf(path_name, sizeof(path_name), "/tiles/%d/%d/%d.png", z, x, y);
@@ -270,16 +293,14 @@ int dbOpen(const char* filename, sqlite3** db) {
 // }
 
 void setup() {
-  delay(3000);
-  Serial.begin(115200);
-  delay(1000);
   int waitCount = 0;
-  while (!Serial && waitCount < 300) { // 3 seconds
-    delay(10);
+  while (!Serial && waitCount < 50) { // 5 seconds
+    Serial.begin(115200);
+    delay(100);
     waitCount++;
   }
+  Serial.println("--------------- started ---------------");
 
-  print("--------------- started ---------------");
   btStop(); // Bluetooth OFF
 
   SPI.end();
@@ -303,6 +324,18 @@ void setup() {
   ui.addInput(0, KEYBOARD_Y - 40,SCREEN_WIDTH,BUTTON_H, 'a').visible(false);
   createKeyboard();
 
+  TFT.println("Init WIFI");
+  // WiFi.mode(WIFI_MODE_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    TFT.println("Connecting to WiFi...");
+  }
+  TFT.println("Connected to WiFi");
+  long rssi = WiFi.RSSI();
+  Serial.print("Signal strength (RSSI): ");
+  Serial.println(rssi);
+
   // TFT.println("Init GPS/GSM");
   // gpsSerial.begin(115200, SERIAL_8N1, A9G_RX, A9G_TX);
   // a9g.setup();
@@ -316,7 +349,6 @@ void setup() {
     NULL, // Дескриптор задачи
     1 // Номер ядра: 0 или 1 (ESP32-S3 имеет два ядра)
   );*/
-
 
   TFT.print("Init card reader");
   spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
@@ -420,14 +452,6 @@ void setup() {
   TFT.println("Init cache");
   initializeCache();
 
-  // TFT.println("Init WIFI");
-  // WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  // while (WiFi.status() != WL_CONNECTED) {
-  //   delay(1000);
-  //   TFT.println("Connecting to WiFi...");
-  // }
-  // TFT.println("Connected to WiFi");
-
   TFT.println("Init done!");
 
   TFT.setTextColor(TFT_BLACK);
@@ -437,6 +461,9 @@ void setup() {
   now = millis();
   compassUpdateAfterMs = now + COMPASS_UPDATE_PERIOD;
   gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
+
+  TJpgDec.setJpgScale(1); // Без масштабирования
+  TJpgDec.setCallback(tft_output);
 }
 
 void loop() {
@@ -477,5 +504,52 @@ void loop() {
 
   if (ui.updateAfterMs != 0 && now > ui.updateAfterMs) ui.update();
   // a9g.loop(gps);
+
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    Serial.print("Connecting to: ");
+    Serial.println(CAM_URL);
+
+    http.begin(CAM_URL);
+
+    int httpCode = http.GET();
+    Serial.print("HTTP Code: ");
+    Serial.println(httpCode);
+
+    if (httpCode > 0) {
+      // Сервер ответил, продолжаем обработку
+      if (httpCode == HTTP_CODE_OK) {
+        WiFiClient stream = http.getStream();
+        int totalLength = http.getSize();
+        Serial.print("Content Length: ");
+        Serial.println(totalLength);
+
+        if (totalLength > 0) {
+          uint8_t* buffer = new uint8_t[totalLength];
+
+          int bytesRead = 0;
+          while (bytesRead < totalLength) {
+            int len = stream.read(buffer + bytesRead, totalLength - bytesRead);
+            if (len <= 0) {
+              break;
+            }
+            bytesRead += len;
+          }
+
+          TJpgDec.drawJpg(0, 0, buffer, totalLength);
+          delete[] buffer;
+        }
+      } else {
+        Serial.println("Failed to retrieve image");
+      }
+    } else {
+      Serial.println("Error in HTTP request");
+    }
+
+    http.end();
+    delay(1000);
+  }
+
+
   delay(1);
 }
