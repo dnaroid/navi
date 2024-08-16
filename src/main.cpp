@@ -2,7 +2,7 @@
 #include <PNGdec.h>
 #include <SD.h>
 #include <SPI.h>
-#include <TinyGPSPlus.h>
+// #include <TinyGPSPlus.h>
 #include <Wire.h>
 
 #include <TFT_eSPI.h>
@@ -17,14 +17,13 @@
 // #include "A9G.h"
 #include <HTTPClient.h>
 #include <sqlite3.h>
-#include <sstream>
 #include "PathFinder.h"
 #include <TJpg_Decoder.h>
 #include <esp_now.h>
 
 
 auto spiDisplay = SPIClass(HSPI);
-auto spiSD = SPIClass(VSPI);
+auto spiSD = SPIClass(FSPI);
 
 // TinyGPSPlus gps;
 HardwareSerial gpsSerial(1);
@@ -68,23 +67,6 @@ bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) 
   TFT.pushImage(x, y, w, h, bitmap);
   return true;
 }
-
-uint8_t imageData[240 * 240]; // Буфер для изображения
-
-// void onDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
-//   static int index = 0;
-//
-//   // Копируем данные в буфер
-//   memcpy(&imageData[index], incomingData, len);
-//   index += len;
-//
-//   // Если буфер заполнен, рисуем изображение
-//   if (index >= sizeof(imageData)) {
-//     TJpgDec.drawJpg(0, 0, imageData, 240 * 240);
-//     TFT.pushImage(0, 0, 240, 240, imageData); // Пример для 240x240 дисплея
-//     index = 0; // Сбрасываем индекс для следующего изображения
-//   }
-// }
 
 const char* getTilePath(int z, int x, int y) {
   std::snprintf(path_name, sizeof(path_name), "/tiles/%d/%d/%d.png", z, x, y);
@@ -287,10 +269,10 @@ int dbOpen(const char* filename, sqlite3** db) {
   return rc;
 }
 
-// void secondCoreTask(void* pvParameters) {
-//   TFT.println("Init GPS/GSM");
-//   a9g.setup();
-// }
+#define LINE_WIDTH 160
+#define COLOR_DEPTH 2
+#define PACKET_SIZE (LINE_WIDTH * COLOR_DEPTH+1)
+uint8_t mirrorBuf[PACKET_SIZE];
 
 void setup() {
   int waitCount = 0;
@@ -324,38 +306,10 @@ void setup() {
   ui.addInput(0, KEYBOARD_Y - 40,SCREEN_WIDTH,BUTTON_H, 'a').visible(false);
   createKeyboard();
 
-  TFT.println("Init WIFI");
-  // WiFi.mode(WIFI_MODE_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    TFT.println("Connecting to WiFi...");
-  }
-  TFT.println("Connected to WiFi");
-  long rssi = WiFi.RSSI();
-  Serial.print("Signal strength (RSSI): ");
-  Serial.println(rssi);
-
-  // TFT.println("Init GPS/GSM");
-  // gpsSerial.begin(115200, SERIAL_8N1, A9G_RX, A9G_TX);
-  // a9g.setup();
-
-  /*xTaskCreatePinnedToCore(
-    secondCoreTask, // Указатель на функцию задачи
-    "TaskOnCore1", // Название задачи
-    2048, // Размер стека задачи в байтах
-    NULL, // Параметры, передаваемые в задачу
-    1, // Приоритет задачи
-    NULL, // Дескриптор задачи
-    1 // Номер ядра: 0 или 1 (ESP32-S3 имеет два ядра)
-  );*/
-
   TFT.print("Init card reader");
   spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
   int frq = 80000000;
-  // int frq = 10000000;
   while (!SD.begin(SD_CS, spiSD, frq) && frq > 1000000) {
-    // while (!SD.begin(SD_CS) && frq > 1000000) {
     frq -= 1000000;
     delay(100);
     TFT.print(".");
@@ -371,6 +325,24 @@ void setup() {
     delay(500);
   }
   TFT.println("SD card is OK");
+
+  TFT.println("Init Cam\n");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print(".");
+  }
+  Serial.print("ESP32-S3 IP Address: ");
+  Serial.println(WiFi.localIP());
+  HTTPClient http;
+  http.begin("http://192.168.4.1/jpg");
+  int httpCode = http.GET();
+  if (httpCode > 0) {
+    if (httpCode == HTTP_CODE_OK) TFT.println("\nCam is ok");
+  } else {
+    Serial.printf("Failed to connect, error: %s\n", http.errorToString(httpCode).c_str());
+  }
+  http.end();
 
   TFT.println("Init DB");
   sqlite3_initialize();
@@ -392,57 +364,6 @@ void setup() {
     TFT.println("Touch is OK");
   }
 
-  /*
-  TFT.println("Init GSM");
-  // TinyGsmAutoBaud(atSerial, GSM_AUTOBAUD_MIN, GSM_AUTOBAUD_MAX);
-  // atSerial.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
-  atSerial.begin(9600, SERIAL_8N1, MODEM_RX, MODEM_TX);
-  delay(3000);
-  TFT.println("Initializing modem...");
-  modem.restart();
-  String modemMOdel = modem.getModemName();
-  TFT.print("Modem model: ");
-  TFT.println(modemMOdel);
-  const char apn[] = "internet";
-  const char user[] = "internet";
-  const char pass[] = "internet";
-  // modem.gprsConnect(apn, user, pass);
-  TFT.print("Waiting for network...");
-  // if (!modem.waitForNetwork()) {
-  //   TFT.println(" fail");
-  //   delay(10000);
-  //   return;
-  // }
-  if (!modem.gprsConnect(apn, user, pass)) {
-    TFT.println("Failed to connect to GPRS");
-    while (true);
-  }
-  // Проверка подключения
-  if (modem.isNetworkConnected()) {
-    TFT.println("Network connected");
-  }
-
-  if (modem.isGprsConnected()) {
-    TFT.println("GPRS connected");
-  }
-  String operatorName = modem.getOperator();
-  TFT.print("Operator: ");
-  TFT.println(operatorName);
-
-  int signalQuality = modem.getSignalQuality();
-  TFT.print("Signal quality: ");
-  TFT.println(signalQuality);
-
-  String modemInf = modem.getModemInfo();
-  TFT.print("Modem Info: ");
-  TFT.println(modemInf);
-
-  IPAddress localIP = modem.localIP();
-  TFT.print("Local IP: ");
-  TFT.println(localIP);
-  TFT.println(" success");
-  */
-
   TFT.println("Init compass");
   compass.init();
   compass.enableDefault();
@@ -454,17 +375,17 @@ void setup() {
 
   TFT.println("Init done!");
 
-  TFT.setTextColor(TFT_BLACK);
-  drawMap();
-  ui.update();
+  TJpgDec.setJpgScale(1);
+  TJpgDec.setCallback(tft_output);
 
-  now = millis();
   compassUpdateAfterMs = now + COMPASS_UPDATE_PERIOD;
   gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
 
-  TJpgDec.setJpgScale(1); // Без масштабирования
-  TJpgDec.setCallback(tft_output);
+  TFT.setTextColor(TFT_BLACK);
+  drawMap();
+  ui.update();
 }
+
 
 void loop() {
   now = millis();
@@ -502,54 +423,37 @@ void loop() {
     gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
   }
 
-  if (ui.updateAfterMs != 0 && now > ui.updateAfterMs) ui.update();
-  // a9g.loop(gps);
 
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
-    Serial.print("Connecting to: ");
-    Serial.println(CAM_URL);
+  //-----------------------------
+  WiFiClient client;
+  if (!client.connect("192.168.4.1", 80)) {
+    Serial.println("Connection to server failed");
+    return;
+  }
+  client.print(String("GET ") + "/jpg" + " HTTP/1.1\r\n" +
+    "Host: 192.168.4.1\r\n" +
+    "Connection: close\r\n\r\n");
 
-    http.begin(CAM_URL);
-
-    int httpCode = http.GET();
-    Serial.print("HTTP Code: ");
-    Serial.println(httpCode);
-
-    if (httpCode > 0) {
-      // Сервер ответил, продолжаем обработку
-      if (httpCode == HTTP_CODE_OK) {
-        WiFiClient stream = http.getStream();
-        int totalLength = http.getSize();
-        Serial.print("Content Length: ");
-        Serial.println(totalLength);
-
-        if (totalLength > 0) {
-          uint8_t* buffer = new uint8_t[totalLength];
-
-          int bytesRead = 0;
-          while (bytesRead < totalLength) {
-            int len = stream.read(buffer + bytesRead, totalLength - bytesRead);
-            if (len <= 0) {
-              break;
-            }
-            bytesRead += len;
-          }
-
-          TJpgDec.drawJpg(0, 0, buffer, totalLength);
-          delete[] buffer;
-        }
-      } else {
-        Serial.println("Failed to retrieve image");
-      }
-    } else {
-      Serial.println("Error in HTTP request");
+  while (client.connected()) {
+    String line = client.readStringUntil('\n');
+    if (line == "\r") {
+      break; // Заголовки закончились
     }
-
-    http.end();
-    delay(1000);
   }
 
+  if (client.available()) {
+    // Далее чтение данных
+    int len = client.available();
+    uint8_t* jpegData = new uint8_t[len];
+    client.readBytes(jpegData, len);
+    TJpgDec.drawJpg(0, 0, jpegData, len);
+    delete[] jpegData;
+  }
+  client.stop();
+  delay(1000);
+  //-----------------------------
 
-  delay(1);
+
+  if (ui.updateAfterMs != 0 && now > ui.updateAfterMs) ui.update();
+  // a9g.loop(gps);
 }
