@@ -3,7 +3,6 @@
 #include "globals.h"
 #include <PNGdec.h>
 #include <SD.h>
-#include "globals.h"
 
 struct TileCacheEntry {
     char filename[MAX_FILENAME_LENGTH];

@@ -2,48 +2,52 @@
 #include <PNGdec.h>
 #include <SD.h>
 #include <SPI.h>
-// #include <TinyGPSPlus.h>
 #include <Wire.h>
 
 #include <TFT_eSPI.h>
+#include <TJpg_Decoder.h>
 #include <WiFi.h>
 
 #include "coord.h"
-#include "png.h"
+
+#include "PngTile.h"
+
 #include "LSM303.h"
+LSM303 compass;
+
 #include "UI.h"
+UI ui;
+
 #include "Touch.h"
-// #include "Router.h"
-// #include "A9G.h"
-#include <HTTPClient.h>
+Touch touch;
+
 #include <sqlite3.h>
+sqlite3* addrDb;
+
 #include "PathFinder.h"
-#include <TJpg_Decoder.h>
-#include "esp_camera.h"
+PathFinder pathFinder;
 
+// #include "Mirror.h"
+// Mirror mirror;
 
-auto spiDisplay = SPIClass(HSPI);
+// auto spiDisplay = SPIClass(HSPI);
 auto spiSD = SPIClass(FSPI);
 
 // TinyGPSPlus gps;
-HardwareSerial gpsSerial(1);
+// HardwareSerial gpsSerial(1);
 // HardwareSerial atSerial(2);
 
 // TinyGsm modem(atSerial);
 // TinyGsmClient client(modem);
-HTTPClient http;
-LSM303 compass;
-UI ui;
-Touch touch;
 // Router router;
 // auto a9g = A9G(gpsSerial);
 
-sqlite3* addrDb;
+HTTPClient http;
+
 char* zErrMsg = 0;
 int rc;
 const char* dbData = "Callback function called";
 std::vector<Address> foundAddrs; //todo make class
-PathFinder pathFinder;
 
 // global vars
 
@@ -287,10 +291,10 @@ void setup() {
   btStop(); // Bluetooth OFF
 
   SPI.end();
-  spiDisplay.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TFT_CS);
-  spiDisplay.setFrequency(80000000);
+  // spiDisplay.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TFT_CS);
+  // spiDisplay.setFrequency(80000000);
   TFT.init();
-  TFT.setAttribute(UTF8_SWITCH, 1);
+  // TFT.setAttribute(UTF8_SWITCH, 1);
   TFT.setRotation(2);
   TFT.fillScreen(TFT_BLACK);
   TFT.setTextColor(TFT_WHITE);
@@ -426,6 +430,7 @@ void loop() {
   }
 
 
+  // mirror.drawImage(0, 0);
   //-----------------------------
   http.begin("http://192.168.4.1/jpg"); // Если сервер доступен
   int httpCode = http.GET();

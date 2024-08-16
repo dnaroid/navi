@@ -1,2 +1,2 @@
 .pio
-/src/secrets.h
+/lib/Config/secrets.h

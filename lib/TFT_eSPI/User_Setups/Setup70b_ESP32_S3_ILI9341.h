@@ -4,7 +4,7 @@
 // See SetupX_Template.h for all options available
 #define ILI9341_DRIVER
 
-                    // Typical board default pins - change to match your board
+// Typical board default pins - change to match your board
 // #define TFT_CS   10 //     10 or 34 (FSPI CS0)
 // #define TFT_MOSI 12 //     11 or 35 (FSPI D)
 // #define TFT_SCLK 11 //     12 or 36 (FSPI CLK)
@@ -36,8 +36,8 @@
 #define USE_HSPI_PORT
 
 //#define SPI_FREQUENCY  27000000
-#define SPI_FREQUENCY  80000000   // Maximum for ILI9341
+// #define SPI_FREQUENCY  80000000   // Maximum for ILI9341
 
-#define SPI_READ_FREQUENCY  6000000 // 6 MHz is the maximum SPI read speed for the ST7789V
+// #define SPI_READ_FREQUENCY  6000000 // 6 MHz is the maximum SPI read speed for the ST7789V
 
-#define SPI_TOUCH_FREQUENCY 2500000
+// #define SPI_TOUCH_FREQUENCY 2500000

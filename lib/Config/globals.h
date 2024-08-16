@@ -1,6 +1,8 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
 
+#include <HTTPClient.h>
+
 #include "secrets.h"
 #include "TFT_eSPI.h"
 
@@ -110,16 +112,32 @@ struct Address {
 
 extern TFT_eSPI TFT;
 
+// extern HTTPClient http;
+
 inline void print() {
 }
 
 template <typename T, typename... Args>
 void print(T first, Args... args) {
   Serial.print(first);
-  Serial.print(' ');
+  print(args...);
+}
+
+template <typename... Args>
+void println(Args... args) {
   print(args...);
   Serial.println();
 }
+
+#ifdef PRODUCTION_MODE
+#define LOG(...)
+#define LOGI(...)
+#define LOGF(...)
+#else
+#define LOG(...) println(__VA_ARGS__)
+#define LOGI(...) print(__VA_ARGS__)
+#define LOGF(...) Serial.printf(__VA_ARGS__)
+#endif
 
 #define delay(ms) vTaskDelay(ms / portTICK_PERIOD_MS)
 
