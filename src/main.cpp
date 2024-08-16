@@ -19,7 +19,7 @@
 #include <sqlite3.h>
 #include "PathFinder.h"
 #include <TJpg_Decoder.h>
-#include <esp_now.h>
+#include "esp_camera.h"
 
 
 auto spiDisplay = SPIClass(HSPI);
@@ -31,7 +31,7 @@ HardwareSerial gpsSerial(1);
 
 // TinyGsm modem(atSerial);
 // TinyGsmClient client(modem);
-
+HTTPClient http;
 LSM303 compass;
 UI ui;
 Touch touch;
@@ -62,6 +62,7 @@ unsigned long compassUpdateAfterMs;
 unsigned long gpsUpdateAfterMs;
 
 static char path_name[MAX_FILENAME_LENGTH];
+
 
 bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) {
   TFT.pushImage(x, y, w, h, bitmap);
@@ -376,6 +377,7 @@ void setup() {
   TFT.println("Init done!");
 
   TJpgDec.setJpgScale(1);
+  TJpgDec.setSwapBytes(true);
   TJpgDec.setCallback(tft_output);
 
   compassUpdateAfterMs = now + COMPASS_UPDATE_PERIOD;
@@ -425,32 +427,14 @@ void loop() {
 
 
   //-----------------------------
-  WiFiClient client;
-  if (!client.connect("192.168.4.1", 80)) {
-    Serial.println("Connection to server failed");
-    return;
-  }
-  client.print(String("GET ") + "/jpg" + " HTTP/1.1\r\n" +
-    "Host: 192.168.4.1\r\n" +
-    "Connection: close\r\n\r\n");
+  http.begin("http://192.168.4.1/jpg"); // Если сервер доступен
+  int httpCode = http.GET();
+  if (httpCode == HTTP_CODE_OK) {
+    const uint8_t* payload = (const uint8_t*)http.getString().c_str();
 
-  while (client.connected()) {
-    String line = client.readStringUntil('\n');
-    if (line == "\r") {
-      break; // Заголовки закончились
-    }
+    TJpgDec.drawJpg(0, 0, payload, http.getSize());
   }
-
-  if (client.available()) {
-    // Далее чтение данных
-    int len = client.available();
-    uint8_t* jpegData = new uint8_t[len];
-    client.readBytes(jpegData, len);
-    TJpgDec.drawJpg(0, 0, jpegData, len);
-    delete[] jpegData;
-  }
-  client.stop();
-  delay(1000);
+  http.end();
   //-----------------------------
 
 
