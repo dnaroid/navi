@@ -5,7 +5,6 @@
 #include <Wire.h>
 
 #include <TFT_eSPI.h>
-#include <TJpg_Decoder.h>
 #include <WiFi.h>
 
 #include "coord.h"
@@ -27,8 +26,8 @@ sqlite3* addrDb;
 #include "PathFinder.h"
 PathFinder pathFinder;
 
-// #include "Mirror.h"
-// Mirror mirror;
+#include "Mirror.h"
+Mirror mirror;
 
 // auto spiDisplay = SPIClass(HSPI);
 auto spiSD = SPIClass(FSPI);
@@ -41,8 +40,6 @@ auto spiSD = SPIClass(FSPI);
 // TinyGsmClient client(modem);
 // Router router;
 // auto a9g = A9G(gpsSerial);
-
-HTTPClient http;
 
 char* zErrMsg = 0;
 int rc;
@@ -67,11 +64,6 @@ unsigned long gpsUpdateAfterMs;
 
 static char path_name[MAX_FILENAME_LENGTH];
 
-
-bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) {
-  TFT.pushImage(x, y, w, h, bitmap);
-  return true;
-}
 
 const char* getTilePath(int z, int x, int y) {
   std::snprintf(path_name, sizeof(path_name), "/tiles/%d/%d/%d.png", z, x, y);
@@ -380,10 +372,6 @@ void setup() {
 
   TFT.println("Init done!");
 
-  TJpgDec.setJpgScale(1);
-  TJpgDec.setSwapBytes(true);
-  TJpgDec.setCallback(tft_output);
-
   compassUpdateAfterMs = now + COMPASS_UPDATE_PERIOD;
   gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
 
@@ -429,19 +417,7 @@ void loop() {
     gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
   }
 
-
-  // mirror.drawImage(0, 0);
-  //-----------------------------
-  http.begin("http://192.168.4.1/jpg"); // Если сервер доступен
-  int httpCode = http.GET();
-  if (httpCode == HTTP_CODE_OK) {
-    const uint8_t* payload = (const uint8_t*)http.getString().c_str();
-
-    TJpgDec.drawJpg(0, 0, payload, http.getSize());
-  }
-  http.end();
-  //-----------------------------
-
+  mirror.drawImage(0, 0);
 
   if (ui.updateAfterMs != 0 && now > ui.updateAfterMs) ui.update();
   // a9g.loop(gps);
