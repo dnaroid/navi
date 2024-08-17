@@ -74,7 +74,7 @@
 
 /// remote
 #define ADDR_SEARCH_LIMIT 5
-#define CAM_URL "http://192.168.4.1/jpg"
+#define IMAGE_CAPTURE_URL "http://192.168.4.1/jpg"
 
 #define TINY_GSM_RX_BUFFER 650
 
@@ -112,7 +112,16 @@ struct Address {
 
 extern TFT_eSPI TFT;
 
-// extern HTTPClient http;
+extern HTTPClient http;
+extern WiFiClient wifi;
+
+extern bool isReadySD;
+extern bool isReadyUI;
+extern bool isReadyDB;
+extern bool isReadyGPS;
+extern bool isReadyWiFi;
+extern bool isReadyCompass;
+extern bool isReadyCamera;
 
 inline void print() {
 }
