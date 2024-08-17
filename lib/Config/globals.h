@@ -1,9 +1,6 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
 
-#include <HTTPClient.h>
-
-#include "secrets.h"
 #include "TFT_eSPI.h"
 
 #define TINY_GSM_MODEM_SIM800
@@ -112,9 +109,6 @@ struct Address {
 
 extern TFT_eSPI TFT;
 
-extern HTTPClient http;
-extern WiFiClient wifi;
-
 extern bool isReadySD;
 extern bool isReadyUI;
 extern bool isReadyDB;
@@ -138,7 +132,9 @@ void println(Args... args) {
   Serial.println();
 }
 
-#ifdef PRODUCTION_MODE
+#define USE_LOGS
+
+#ifndef USE_LOGS
 #define LOG(...)
 #define LOGI(...)
 #define LOGF(...)

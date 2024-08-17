@@ -28,8 +28,6 @@ sqlite3* addrDb;
 #include "PathFinder.h"
 PathFinder pathFinder;
 
-#include "Mirror.h"
-
 #include "Server.h"
 
 // TinyGPSPlus gps;
@@ -348,8 +346,6 @@ void setupCompass() {
   isReadyCompass = true;
 }
 
-void setupCam() {
-}
 
 void setup() {
   int waitCount = 0;
@@ -367,30 +363,7 @@ void setup() {
   // setupCompass();
   setupUI();
 
-  // setupCam();
-  LOG("Init Cam");
-  isReadyCamera = MirrorInit();
-  // MirrorConnect();
-  // WiFi.mode(WIFI_MODE_STA);
-  // esp_wifi_set_max_tx_power(1);
-  // LOGI("     connect to WiFi");
-  // WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  // while (WiFi.status() != WL_CONNECTED) {
-  //   delay(500);
-  //   LOGI(".");
-  // }
-  // LOG(" ok");
-  // // HTTPClient http; // так же объявлен глобально, но если эту строку убрать - не будет подключаться в loop()
-  // LOGI("     take image");
-  // http.begin(IMAGE_CAPTURE_URL);
-  // int httpCode = http.GET();
-  // if (httpCode == HTTP_CODE_OK) {
-  //   LOG(" ok");
-  //   isReadyCamera = true;
-  // } else {
-  //   LOG(" fail: ", http.errorToString(httpCode).c_str());
-  // }
-  // http.end();
+  ServerSetup();
 
   LOG("----------------Init done----------------");
 
@@ -437,8 +410,6 @@ void loop() {
     // }
     gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
   }
-
-  if (isReadyCamera) { MirrorDraw(40, 240); }
 
   if (ui.updateAfterMs != 0 && now > ui.updateAfterMs) ui.update();
   // a9g.loop(gps);
