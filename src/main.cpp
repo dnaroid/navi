@@ -49,7 +49,7 @@ const char* getTilePath(int z, int x, int y) {
   return path_name;
 }
 
-void drawTile(int x, int y, int sx, int sy) {
+inline void drawTile(int x, int y, int sx, int sy) {
   int x2 = sx + TILE_SIZE;
   int y2 = sy + TILE_SIZE;
   if (sx <= SCREEN_WIDTH && x2 >= 0 && sy <= SCREEN_HEIGHT && y2 >= 0) {
@@ -111,6 +111,7 @@ void drawMap() {
   drawMyMarker();
   drawTargetMarker();
   drawRoute();
+
   mapSprite.pushSprite(0, 0);
 }
 
@@ -201,14 +202,14 @@ void onAddrType(Button& btn) {
 }
 
 void onClick(const Pos& p) {
+#ifndef DISABLE_UI
   if (!ui.processPress(p.x, p.y)) {
     targetLoc = coord::pointToLocation(p, centerLoc, zoom);
     ui.findButtonByText("R").enabled(true);
     drawMap();
-#ifndef DISABLE_UI
     ui.update();
-#endif
   }
+#endif
 }
 
 void onDrag(const Pos& p) {
@@ -286,7 +287,6 @@ void setup() {
   ui.addInput(0, KEYBOARD_Y - 40,SCREEN_WIDTH,BUTTON_H, 'a').visible(false);
   createKeyboard();
   LOG("ok");
-  isReadyUI = true;
 #endif
 
 #ifndef DISABLE_SD
@@ -306,7 +306,6 @@ void setup() {
     delay(100);
   }
   LOG(" ok");
-  isReadySD = true;
 #endif
 
 #if !defined(DISABLE_SD) && !defined(DISABLE_DB)
@@ -321,12 +320,6 @@ void setup() {
     LOG("ok");
     isReadyDB = true;
   }
-#endif
-
-#ifndef DISABLE_TILE_CACHE
-  LOGI("Init tiles cache ");
-  initializeCache();
-  LOG("ok");
 #endif
 
 #if !defined(DISABLE_TOUCH) && !defined(DISABLE_COMPASS)
@@ -345,6 +338,10 @@ void setup() {
   }
 #endif
 
+#ifndef DISABLE_GPS
+  gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
+#endif
+
 #ifndef DISABLE_COMPASS
   LOGI("Init Compass");
   compass.init();
@@ -356,13 +353,15 @@ void setup() {
   compassUpdateAfterMs = now + COMPASS_UPDATE_PERIOD;
 #endif
 
+#ifndef DISABLE_TILE_CACHE
+  LOGI("Init tiles cache ");
+  initializeCache();
+  LOG("ok");
+#endif
+
 #ifndef DISABLE_SERVER
   // WiFi.persistent(false);
   ServerSetup();
-#endif
-
-#ifndef DISABLE_GPS
-  gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
 #endif
 
   LOG("---------------- Init done ----------------");
@@ -377,8 +376,13 @@ void setup() {
 
 void loop() {
   now = millis();
+
+  // drawMap();
+  // delay(100);
+
+#ifndef DISABLE_TOUCH
   touch.update();
-  bool gps = false;
+#endif
 
 #ifndef DISABLE_COMPASS
   if (isReadyCompass && now > compassUpdateAfterMs) {
@@ -393,6 +397,8 @@ void loop() {
 #endif
 
 #ifndef DISABLE_GPS
+  bool gps = false;
+
   if (isReadyGPS && now > gpsUpdateAfterMs) {
     gps = true;
     // while (gpsSerial.available() > 0) {

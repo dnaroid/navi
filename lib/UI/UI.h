@@ -158,6 +158,7 @@ public:
     updateAfterMs = 0;
     for (auto& btn : buttons) drawButton(btn);
     for (auto& inp : inputs) drawInput(inp);
+    mapSprite.pushSprite(0, 0);
   }
 
   void drawButton(Button& btn) const {
@@ -242,8 +243,7 @@ public:
     for (auto& btn : buttons) {
       if (btn.text == text) return btn;
     }
-    Serial.print("Error: findButtonByText ");
-    Serial.println(text);
+    LOG("Error: findButtonByText ", text);
     while (true);
   }
 
@@ -251,8 +251,7 @@ public:
     for (auto& btn : buttons) {
       if (btn.id == id) return btn;
     }
-    Serial.print("Error: findButtonById ");
-    Serial.println(id);
+    LOG("Error: findButtonById ", id);
     while (true);
   }
 
@@ -260,8 +259,7 @@ public:
     for (auto& inp : inputs) {
       if (inp._id == id) return inp;
     }
-    Serial.print("Error: findInputById ");
-    Serial.println(id);
+    LOG("Error: findInputById ", id);
     while (true);
   }
 

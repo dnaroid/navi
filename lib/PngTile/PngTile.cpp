@@ -48,10 +48,10 @@ void drawPngTile(const char* filename, int x, int y) {
     int16_t rc = png.open(filename, pngOpen, pngClose, pngRead, pngSeek, pngDraw);
     if (rc == PNG_SUCCESS) {
         rc = png.decode(NULL, 0);
-        png.close();
     } else {
         LOG("! Failed to decode PNG: ", rc);
     }
+    png.close();
 }
 #else
 

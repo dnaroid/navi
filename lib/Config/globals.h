@@ -5,12 +5,12 @@
 
 /// --- features
 // #define DISABLE_TFT
-#define DISABLE_UI
-#define DISABLE_TOUCH
-#define DISABLE_SD
+// #define DISABLE_UI
+// #define DISABLE_TOUCH
+// #define DISABLE_SD
 #define DISABLE_DB
 #define DISABLE_TILE_CACHE
-// #define DISABLE_SERVER
+#define DISABLE_SERVER
 #define DISABLE_COMPASS
 #define DISABLE_GPS
 
@@ -118,14 +118,6 @@ struct Address {
 
 extern TFT_eSPI TFT;
 extern TFT_eSprite mapSprite;
-
-extern bool isReadySD;
-extern bool isReadyUI;
-extern bool isReadyDB;
-extern bool isReadyGPS;
-extern bool isReadyWiFi;
-extern bool isReadyCompass;
-extern bool isReadyCamera;
 
 inline void print() {
 }
