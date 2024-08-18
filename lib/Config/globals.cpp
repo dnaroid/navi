@@ -1,7 +1,6 @@
 #include <TFT_eSPI.h>
 
 auto TFT = TFT_eSPI();
-auto mapSprite = TFT_eSprite(&TFT);
 
 bool isReadySD = false;
 bool isReadyUI = false;

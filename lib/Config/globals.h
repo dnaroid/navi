@@ -3,13 +3,13 @@
 
 #include "TFT_eSPI.h"
 
-/// --- features
+/// --- features disabling
 // #define DISABLE_TFT
 // #define DISABLE_UI
 // #define DISABLE_TOUCH
 // #define DISABLE_SD
 #define DISABLE_DB
-#define DISABLE_TILE_CACHE
+// #define DISABLE_TILE_CACHE
 #define DISABLE_SERVER
 #define DISABLE_COMPASS
 #define DISABLE_GPS
@@ -63,8 +63,7 @@
 #define COMPASS_MAGNETIC_DECLINATION_M 43
 
 /// --- cache
-// #define MAX_CACHE_SIZE 15
-#define MAX_CACHE_SIZE 9
+#define MAX_CACHE_SIZE 15
 #define MAX_FILENAME_LENGTH 35
 
 /// --- timing
@@ -117,7 +116,6 @@ struct Address {
 };
 
 extern TFT_eSPI TFT;
-extern TFT_eSprite mapSprite;
 
 inline void print() {
 }

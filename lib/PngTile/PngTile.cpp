@@ -1,5 +1,3 @@
-#include <cstdint>
-#include <FS.h>
 #include "globals.h"
 #include <PNGdec.h>
 #include <SD.h>
@@ -12,7 +10,7 @@ uint16_t lineBuffer[TILE_SIZE];
 
 void* pngOpen(const char* filename, int32_t* size) {
     file = SD.open(filename);
-    if (!file) { print("! Failed to open file: ", filename); }
+    if (!file) { print("Failed to open file: ", filename); }
     *size = file.size();
     return &file;
 }
@@ -39,7 +37,7 @@ void pngDraw(PNGDRAW* pDraw) {
     if (xpos >= SCREEN_WIDTH) return;
     int drawWidth = pDraw->iWidth;
     if (xpos + drawWidth > SCREEN_WIDTH) { drawWidth = SCREEN_WIDTH - xpos; }
-    mapSprite.pushImage(xpos, ypos + pDraw->y, drawWidth, 1, lineBuffer);
+    TFT.pushImage(xpos, ypos + pDraw->y, drawWidth, 1, lineBuffer);
 }
 
 void drawPngTile(const char* filename, int x, int y) {
@@ -49,7 +47,8 @@ void drawPngTile(const char* filename, int x, int y) {
     if (rc == PNG_SUCCESS) {
         rc = png.decode(NULL, 0);
     } else {
-        LOG("! Failed to decode PNG: ", rc);
+        LOG(" Failed to decode PNG");
+        TFT.fillRect(x, y,TILE_SIZE,TILE_SIZE,TFT_LIGHTGREY);
     }
     png.close();
 }

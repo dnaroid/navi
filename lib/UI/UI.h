@@ -158,7 +158,6 @@ public:
     updateAfterMs = 0;
     for (auto& btn : buttons) drawButton(btn);
     for (auto& inp : inputs) drawInput(inp);
-    mapSprite.pushSprite(0, 0);
   }
 
   void drawButton(Button& btn) const {
