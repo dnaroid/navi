@@ -164,7 +164,7 @@ public:
         return nearestNodeId;
     }
 
-    std::vector<Location> path;
+    std::vector<Location> path = {};
     float distance = 0.0;
 
 private:

@@ -3,6 +3,17 @@
 
 #include "TFT_eSPI.h"
 
+/// --- features
+// #define DISABLE_TFT
+#define DISABLE_UI
+#define DISABLE_TOUCH
+#define DISABLE_SD
+#define DISABLE_DB
+#define DISABLE_TILE_CACHE
+// #define DISABLE_SERVER
+#define DISABLE_COMPASS
+#define DISABLE_GPS
+
 #define TINY_GSM_MODEM_SIM800
 
 /// --- pins
@@ -52,10 +63,8 @@
 #define COMPASS_MAGNETIC_DECLINATION_M 43
 
 /// --- cache
-// #define CACHE_DISABLED
-#ifndef CACHE_DISABLED
-#define MAX_CACHE_SIZE 15
-#endif
+// #define MAX_CACHE_SIZE 15
+#define MAX_CACHE_SIZE 9
 #define MAX_FILENAME_LENGTH 35
 
 /// --- timing
@@ -108,6 +117,7 @@ struct Address {
 };
 
 extern TFT_eSPI TFT;
+extern TFT_eSprite mapSprite;
 
 extern bool isReadySD;
 extern bool isReadyUI;
@@ -132,9 +142,8 @@ void println(Args... args) {
   Serial.println();
 }
 
-#define USE_LOGS
 
-#ifndef USE_LOGS
+#ifdef RELEASE
 #define LOG(...)
 #define LOGI(...)
 #define LOGF(...)

@@ -1,45 +1,27 @@
-#include <esp_wifi.h>
-
 #include "globals.h"
-#include <PNGdec.h>
-#include <SD.h>
-#include <SPI.h>
-#include <Wire.h>
-
-#include <TFT_eSPI.h>
-#include <WiFi.h>
-
+#include "PNGdec.h"
+#include "SD.h"
+#include "secrets.h"
+#include "SPI.h"
+#include "Wire.h"
+#include "TFT_eSPI.h"
+#include "WiFi.h"
 #include "coord.h"
-
 #include "PngTile.h"
-
 #include "LSM303.h"
-LSM303 compass;
-
 #include "UI.h"
-UI ui;
-
 #include "Touch.h"
-Touch touch;
-
-#include <sqlite3.h>
-sqlite3* addrDb;
-
+#include "sqlite3.h"
 #include "PathFinder.h"
-PathFinder pathFinder;
-
 #include "Server.h"
 
-// TinyGPSPlus gps;
-// HardwareSerial gpsSerial(1);
-// HardwareSerial atSerial(2);
+sqlite3* addrDb;
+Touch touch;
+UI ui;
+LSM303 compass;
+PathFinder pathFinder;
 
-// TinyGsm modem(atSerial);
-// TinyGsmClient client(modem);
-// Router router;
-// auto a9g = A9G(gpsSerial);
-
-char* zErrMsg = 0;
+char* zErrMsg = nullptr;
 int rc;
 const char* dbData = "Callback function called";
 std::vector<Address> foundAddrs; //todo make class
@@ -78,11 +60,11 @@ void drawTile(int x, int y, int sx, int sy) {
 void drawMyMarker() {
   if (!myLoc.lat) { return; }
   Point p = coord::locationToScreen(myLoc, centerLoc, zoom);
-  TFT.fillCircle(p.x, p.y, MY_MARKER_R,TFT_BLUE);
+  mapSprite.fillCircle(p.x, p.y, MY_MARKER_R,TFT_BLUE);
   float angle_rad = angle * DEG_TO_RAD;
   int offsetX = (MY_MARKER_R - MY_MARKER_R2 - 1) * cos(angle_rad);
   int offsetY = -(MY_MARKER_R - MY_MARKER_R2 - 1) * sin(angle_rad);
-  TFT.fillCircle(p.x + offsetX, p.y + offsetY, MY_MARKER_R2, TFT_WHITE);
+  mapSprite.fillCircle(p.x + offsetX, p.y + offsetY, MY_MARKER_R2, TFT_WHITE);
 }
 
 void drawTargetMarker() {
@@ -91,9 +73,9 @@ void drawTargetMarker() {
   constexpr int dy = -(radius * 1.5);
   constexpr int color = TFT_BLUE;
   Point p = coord::locationToScreen(targetLoc, centerLoc, zoom);
-  TFT.fillCircle(p.x, p.y + dy, radius, color);
-  TFT.fillTriangle(p.x - radius, p.y + dy, p.x + radius, p.y + dy, p.x, p.y, color);
-  TFT.fillCircle(p.x, p.y + dy, radius / 3, TFT_WHITE);
+  mapSprite.fillCircle(p.x, p.y + dy, radius, color);
+  mapSprite.fillTriangle(p.x - radius, p.y + dy, p.x + radius, p.y + dy, p.x, p.y, color);
+  mapSprite.fillCircle(p.x, p.y + dy, radius / 3, TFT_WHITE);
 }
 
 void drawRoute() {
@@ -102,16 +84,17 @@ void drawRoute() {
   Point p1 = coord::locationToScreen(route[0], centerLoc, zoom);
   for (size_t i = 1; i < route.size(); i++) {
     const Point p2 = coord::locationToScreen(route[i], centerLoc, zoom);
-    TFT.drawLine(p1.x, p1.y, p2.x, p2.y,TFT_BLUE);
-    TFT.drawLine(p1.x, p1.y + 1, p2.x, p2.y + 1,TFT_BLUE);
-    TFT.drawLine(p1.x, p1.y - 1, p2.x, p2.y - 1,TFT_BLUE);
-    TFT.drawLine(p1.x + 1, p1.y, p2.x + 1, p2.y,TFT_BLUE);
-    TFT.drawLine(p1.x - 1, p1.y, p2.x - 1, p2.y,TFT_BLUE);
+    mapSprite.drawLine(p1.x, p1.y, p2.x, p2.y,TFT_BLUE);
+    mapSprite.drawLine(p1.x, p1.y + 1, p2.x, p2.y + 1,TFT_BLUE);
+    mapSprite.drawLine(p1.x, p1.y - 1, p2.x, p2.y - 1,TFT_BLUE);
+    mapSprite.drawLine(p1.x + 1, p1.y, p2.x + 1, p2.y,TFT_BLUE);
+    mapSprite.drawLine(p1.x - 1, p1.y, p2.x - 1, p2.y,TFT_BLUE);
     p1 = p2;
   }
 }
 
 void drawMap() {
+#ifndef DISABLE_SD
   Point p = coord::locationToPixels(centerLoc, zoom);
   int x_tile = p.x / TILE_SIZE;
   int y_tile = p.y / TILE_SIZE;
@@ -124,9 +107,11 @@ void drawMap() {
       drawTile(x_tile + dx, y_tile + dy, tile_screen_x + dx * TILE_SIZE, tile_screen_y + dy * TILE_SIZE);
     }
   }
+#endif
   drawMyMarker();
   drawTargetMarker();
   drawRoute();
+  mapSprite.pushSprite(0, 0);
 }
 
 void showAddresses() {
@@ -220,7 +205,9 @@ void onClick(const Pos& p) {
     targetLoc = coord::pointToLocation(p, centerLoc, zoom);
     ui.findButtonByText("R").enabled(true);
     drawMap();
+#ifndef DISABLE_UI
     ui.update();
+#endif
   }
 }
 
@@ -229,7 +216,9 @@ void onDrag(const Pos& p) {
   Point end = {start.x - p.dx, start.y - p.dy};
   centerLoc = coord::pixelsToLocation(end, zoom);
   drawMap();
+#ifndef DISABLE_UI
   ui.updateAfter(ANIM_MS * 2);
+#endif
 }
 
 void createKeyboard() {
@@ -255,27 +244,40 @@ void createKeyboard() {
 int dbOpen(const char* filename, sqlite3** db) {
   int rc = sqlite3_open(filename, db);
   if (rc) {
-    Serial.printf("Can't open database: %s\n", sqlite3_errmsg(*db));
+    LOG("Can't open database: %s\n", sqlite3_errmsg(*db));
     return rc;
   }
-  Serial.printf("Opened database successfully\n");
   return rc;
 }
 
-void setupUI() {
-  LOGI("Init cache ");
-  initializeCache();
-  LOG("ok");
+void setup() {
+  int waitCount = 0;
+  Serial.begin(115200);
+  while (!Serial && waitCount < 50) { // 5 seconds
+    delay(100);
+    waitCount++;
+  }
+  Serial.println("--------------- started ---------------");
+
+  btStop(); // Bluetooth OFF
+
+#ifndef DISABLE_TFT
   LOGI("Init TFT ");
   TFT.init();
   // TFT.setAttribute(UTF8_SWITCH, 1);
   TFT.setRotation(2);
   TFT.fillScreen(TFT_BLACK);
-  TFT.setTextColor(TFT_WHITE);
-  TFT.setFreeFont(&FreeMono9pt7b);
-  TFT.setCursor(0, 20);
+  TFT.setTextColor(TFT_BLACK);
+  TFT.setFreeFont(&FreeMono9pt7b); // custom with Polish letters
+  mapSprite.createSprite(TFT_WIDTH, TFT_HEIGHT);
+  mapSprite.setTextColor(TFT_BLACK);
+  mapSprite.setFreeFont(&FreeMono9pt7b); // custom with Polish letters
+  LOG("ok");
+#endif
 
-  ui.init(TFT);
+#ifndef DISABLE_UI
+  LOGI("Init UI ");
+  ui.init(mapSprite);
   ui.addButton('+', 10, 10).enabled(zoom < 18).onPress(onZoomBtnPressed);
   ui.addButton('-', 10, 10 + 45).enabled(zoom > 12).onPress(onZoomBtnPressed);
   ui.addButton('L', 10, 10 + 45 * 2).enabled(false);
@@ -284,26 +286,16 @@ void setupUI() {
   ui.addInput(0, KEYBOARD_Y - 40,SCREEN_WIDTH,BUTTON_H, 'a').visible(false);
   createKeyboard();
   LOG("ok");
-  LOGI("Init Touch ");
-  Wire.begin(I2C_SDA, I2C_SCL, 0);
-  delay(100);
-  if (!touch.init()) {
-    LOG("fail");
-  } else {
-    touch.onClick(onClick);
-    touch.onDrag(onDrag);
-    LOG("ok");
-  }
   isReadyUI = true;
-}
+#endif
 
-void setupSD() {
-  LOGI("Init card reader");
+#ifndef DISABLE_SD
+  LOGI("Init Card reader");
   auto spiSD = SPIClass(FSPI);
   spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
   int frq = 80000000;
   while (!SD.begin(SD_CS, spiSD, frq) && frq > 1000000) {
-    // frq -= 1000000;
+    frq -= 1000000;
     delay(100);
     LOGI(".");
   }
@@ -315,17 +307,12 @@ void setupSD() {
   }
   LOG(" ok");
   isReadySD = true;
-}
+#endif
 
-void setupDB() {
-  if (!isReadySD) {
-    LOG("SD is not ready. Skip DB init");
-    return;
-  }
+#if !defined(DISABLE_SD) && !defined(DISABLE_DB)
   LOGI("Init DB ");
   sqlite3_initialize();
-  constexpr int flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX;
-  rc = sqlite3_open_v2("/sd/addr.db", &addrDb, flags, nullptr);
+  if (dbOpen("/sd/addr.db", &addrDb)) return;
   if (rc != SQLITE_OK) {
     sqlite3_close(addrDb);
     LOG("fail");
@@ -334,9 +321,31 @@ void setupDB() {
     LOG("ok");
     isReadyDB = true;
   }
-}
+#endif
 
-void setupCompass() {
+#ifndef DISABLE_TILE_CACHE
+  LOGI("Init tiles cache ");
+  initializeCache();
+  LOG("ok");
+#endif
+
+#if !defined(DISABLE_TOUCH) && !defined(DISABLE_COMPASS)
+  Wire.begin(I2C_SDA, I2C_SCL, 0);
+  delay(100);
+#endif
+
+#ifndef DISABLE_TOUCH
+  LOGI("Init Touch ");
+  if (!touch.init()) {
+    LOG("fail");
+  } else {
+    touch.onClick(onClick);
+    touch.onDrag(onDrag);
+    LOG("ok");
+  }
+#endif
+
+#ifndef DISABLE_COMPASS
   LOGI("Init Compass");
   compass.init();
   compass.enableDefault();
@@ -344,35 +353,26 @@ void setupCompass() {
   compass.m_max = (LSM303::vector<int16_t>){+331, +353, +4};
   LOG(" ok");
   isReadyCompass = true;
-}
-
-
-void setup() {
-  int waitCount = 0;
-  while (!Serial && waitCount < 50) { // 5 seconds
-    Serial.begin(115200);
-    delay(100);
-    waitCount++;
-  }
-  Serial.println("--------------- started ---------------");
-
-  // btStop(); // Bluetooth OFF
-
-  setupSD();
-  // setupDB();
-  // setupCompass();
-  setupUI();
-
-  ServerSetup();
-
-  LOG("----------------Init done----------------");
-
   compassUpdateAfterMs = now + COMPASS_UPDATE_PERIOD;
-  gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
+#endif
 
-  TFT.setTextColor(TFT_BLACK);
-  // drawMap();
+#ifndef DISABLE_SERVER
+  // WiFi.persistent(false);
+  ServerSetup();
+#endif
+
+#ifndef DISABLE_GPS
+  gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
+#endif
+
+  LOG("---------------- Init done ----------------");
+
+#ifndef DISABLE_TFT
+  drawMap();
+#ifndef DISABLE_UI
   ui.update();
+#endif
+#endif
 }
 
 void loop() {
@@ -380,6 +380,7 @@ void loop() {
   touch.update();
   bool gps = false;
 
+#ifndef DISABLE_COMPASS
   if (isReadyCompass && now > compassUpdateAfterMs) {
     compass.read();
     new_angle = compass.heading();
@@ -389,7 +390,9 @@ void loop() {
     }
     compassUpdateAfterMs = now + COMPASS_UPDATE_PERIOD;
   }
+#endif
 
+#ifndef DISABLE_GPS
   if (isReadyGPS && now > gpsUpdateAfterMs) {
     gps = true;
     // while (gpsSerial.available() > 0) {
@@ -408,9 +411,17 @@ void loop() {
     //     }
     //   }
     // }
+    // a9g.loop(gps);
+
     gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
   }
+#endif
 
+#ifndef DISABLE_UI
   if (ui.updateAfterMs != 0 && now > ui.updateAfterMs) ui.update();
-  // a9g.loop(gps);
+#endif
+
+#ifndef DISABLE_SERVER
+  ServerLoop();
+#endif
 }
