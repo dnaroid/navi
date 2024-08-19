@@ -418,10 +418,8 @@ void setup() {
   mapComponent = new MapComponent(screen);
   mapComponent->set_tile_size(TILE_SIZE);
   mapComponent->set_map_path("tiles");
-  mapComponent->set_initial_position(144630, 83682);
-
-  // Начальная загрузка видимых тайлов
-  mapComponent->update_visible_tiles();
+  mapComponent->set_initial_tile_position(144630, 83682);
+  // mapComponent->set_initial_geographic_position(54.3516, 18.6466, 18);
 
 
   LOG("---------------- Init done ----------------");
