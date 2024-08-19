@@ -5,7 +5,7 @@
 
 /// --- features disabling
 // #define DISABLE_TFT
-// #define DISABLE_UI
+#define DISABLE_UI
 // #define DISABLE_TOUCH
 // #define DISABLE_SD
 #define DISABLE_DB

@@ -1,3 +1,5 @@
+#include <lwip/mem.h>
+
 #include "globals.h"
 #include "PNGdec.h"
 #include "SD.h"
@@ -14,13 +16,14 @@
 #include "PathFinder.h"
 #include "lvgl.h"
 #include "../lv_conf.h"
-#include "demos/lv_demos.h"
+#include "map_component.h"
 
 sqlite3* addrDb;
 Touch touch;
 UI ui;
 LSM303 compass;
 PathFinder pathFinder;
+MapComponent* mapComponent;
 
 char* zErrMsg = nullptr;
 int rc;
@@ -47,113 +50,6 @@ static char path_name[MAX_FILENAME_LENGTH];
 
 auto spiSD = SPIClass(VSPI);
 
-
-// LVGL ------------------------------------------------
-
-// Колбэк для первой кнопки
-void btn1_event_cb(lv_event_t* e) {
-  Serial.println("Button 1 pressed");
-}
-
-// Колбэк для второй кнопки
-void btn2_event_cb(lv_event_t* e) {
-  Serial.println("Button 2 pressed");
-}
-
-int btn1_count = 0;
-// Callback that is triggered when btn1 is clicked
-static void event_handler_btn1(lv_event_t* e) {
-  lv_event_code_t code = lv_event_get_code(e);
-  if (code == LV_EVENT_CLICKED) {
-    btn1_count++;
-    LV_LOG_USER("Button clicked %d%", (int)btn1_count);
-  }
-}
-
-// Callback that is triggered when btn2 is clicked/toggled
-static void event_handler_btn2(lv_event_t* e) {
-  lv_event_code_t code = lv_event_get_code(e);
-  lv_obj_t* obj = (lv_obj_t*)lv_event_get_target(e);
-  if (code == LV_EVENT_VALUE_CHANGED) {
-    LV_UNUSED(obj);
-    LV_LOG_USER("Toggled %s", lv_obj_has_state(obj, LV_STATE_CHECKED) ? "on" : "off");
-  }
-}
-
-static lv_obj_t* slider_label;
-// Callback that prints the current slider value on the TFT display and Serial Monitor for debugging purposes
-static void slider_event_callback(lv_event_t* e) {
-  lv_obj_t* slider = (lv_obj_t*)lv_event_get_target(e);
-  char buf[8];
-  lv_snprintf(buf, sizeof(buf), "%d%%", (int)lv_slider_get_value(slider));
-  lv_label_set_text(slider_label, buf);
-  lv_obj_align_to(slider_label, slider, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
-  LV_LOG_USER("Slider changed to %d%%", (int)lv_slider_get_value(slider));
-}
-
-void lv_create_main_gui() {
-  // Create a text label aligned center on top ("Hello, world!")
-  lv_obj_t* text_label = lv_label_create(lv_screen_active());
-  lv_label_set_long_mode(text_label, LV_LABEL_LONG_WRAP); // Breaks the long lines
-  lv_label_set_text(text_label, "Hello, world!");
-  lv_obj_set_width(text_label, 150); // Set smaller width to make the lines wrap
-  lv_obj_set_style_text_align(text_label, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(text_label, LV_ALIGN_CENTER, 0, -90);
-
-  lv_obj_t* btn_label;
-  // Create a Button (btn1)
-  lv_obj_t* btn1 = lv_button_create(lv_screen_active());
-  lv_obj_add_event_cb(btn1, event_handler_btn1, LV_EVENT_ALL, NULL);
-  lv_obj_align(btn1, LV_ALIGN_CENTER, 0, -50);
-  lv_obj_remove_flag(btn1, LV_OBJ_FLAG_PRESS_LOCK);
-
-  btn_label = lv_label_create(btn1);
-  lv_label_set_text(btn_label, "Button");
-  lv_obj_center(btn_label);
-
-  // Create a Toggle button (btn2)
-  lv_obj_t* btn2 = lv_button_create(lv_screen_active());
-  lv_obj_add_event_cb(btn2, event_handler_btn2, LV_EVENT_ALL, NULL);
-  lv_obj_align(btn2, LV_ALIGN_CENTER, 0, 10);
-  lv_obj_add_flag(btn2, LV_OBJ_FLAG_CHECKABLE);
-  lv_obj_set_height(btn2, LV_SIZE_CONTENT);
-
-  btn_label = lv_label_create(btn2);
-  lv_label_set_text(btn_label, "Toggle");
-  lv_obj_center(btn_label);
-
-  // Create a slider aligned in the center bottom of the TFT display
-  lv_obj_t* slider = lv_slider_create(lv_screen_active());
-  lv_obj_align(slider, LV_ALIGN_CENTER, 0, 60);
-  lv_obj_add_event_cb(slider, slider_event_callback, LV_EVENT_VALUE_CHANGED, NULL);
-  lv_slider_set_range(slider, 0, 100);
-  lv_obj_set_style_anim_duration(slider, 2000, 0);
-
-  // Create a label below the slider to display the current slider value
-  slider_label = lv_label_create(lv_screen_active());
-  lv_label_set_text(slider_label, "0%");
-  lv_obj_align_to(slider_label, slider, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
-}
-
-void create_demo_ui() {
-  // Создаем первую кнопку
-  lv_obj_t* btn1 = lv_btn_create(lv_scr_act()); // Создаем кнопку на активном экране
-  lv_obj_set_size(btn1, 100, 50); // Устанавливаем размер кнопки
-  lv_obj_align(btn1, LV_ALIGN_CENTER, -60, 0); // Выравниваем кнопку слева от центра
-  lv_obj_add_event_cb(btn1, btn1_event_cb, LV_EVENT_CLICKED, NULL); // Устанавливаем колбэк на нажатие
-
-  lv_obj_t* label1 = lv_label_create(btn1); // Создаем метку на кнопке
-  lv_label_set_text(label1, "Button 1"); // Устанавливаем текст метки
-
-  // Создаем вторую кнопку
-  lv_obj_t* btn2 = lv_btn_create(lv_scr_act()); // Создаем кнопку на активном экране
-  lv_obj_set_size(btn2, 100, 50); // Устанавливаем размер кнопки
-  lv_obj_align(btn2, LV_ALIGN_CENTER, 60, 0); // Выравниваем кнопку справа от центра
-  lv_obj_add_event_cb(btn2, btn2_event_cb, LV_EVENT_CLICKED, NULL); // Устанавливаем колбэк на нажатие
-
-  lv_obj_t* label2 = lv_label_create(btn2); // Создаем метку на кнопке
-  lv_label_set_text(label2, "Button 2"); // Устанавливаем текст метки
-}
 
 #define DRAW_BUF_SIZE (SCREEN_WIDTH * SCREEN_HEIGHT / 10 * (LV_COLOR_DEPTH / 8))
 uint32_t draw_buf[DRAW_BUF_SIZE / 4];
@@ -511,26 +407,29 @@ void setup() {
   lv_log_register_print_cb(my_print);
 #endif
 
-  lv_display_t* disp;
-  /*TFT_eSPI can be enabled lv_conf.h to initialize the display in a simple way*/
-  disp = lv_tft_espi_create(SCREEN_WIDTH, SCREEN_HEIGHT, draw_buf, sizeof(draw_buf));
-  // disp = lv_tft_espi_create(SCREEN_HEIGHT, SCREEN_WIDTH, draw_buf, sizeof(draw_buf));
-  // lv_display_set_rotation(disp, LV_DISPLAY_ROTATION_90);
+  lv_tft_espi_create(SCREEN_WIDTH, SCREEN_HEIGHT, draw_buf, sizeof(draw_buf));
 
-  /*Initialize the (dummy) input device driver*/
   lv_indev_t* indev = lv_indev_create();
-  lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER); /*Touchpad should have POINTER type*/
+  lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
   lv_indev_set_read_cb(indev, my_touchpad_read);
 
-  lv_create_main_gui();
+  lv_obj_t* screen = lv_scr_act();
+
+  mapComponent = new MapComponent(screen);
+  mapComponent->set_tile_size(TILE_SIZE);
+  mapComponent->set_map_path("tiles");
+  mapComponent->set_initial_position(144630, 83682);
+
+  // Начальная загрузка видимых тайлов
+  mapComponent->update_visible_tiles();
 
 
   LOG("---------------- Init done ----------------");
 
 #ifndef DISABLE_TFT
-  drawMap();
+  // drawMap();
 #ifndef DISABLE_UI
-  ui.update();
+  // ui.update();
 #endif
 #endif
 }
