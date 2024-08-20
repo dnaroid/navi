@@ -1,14 +1,10 @@
 #include <lwip/mem.h>
 
 #include "globals.h"
-#include "PNGdec.h"
-#include "SD.h"
-#include "SPI.h"
 #include "Wire.h"
 #include "TFT_eSPI.h"
 #include "WiFi.h"
 #include "coord.h"
-#include "PngTile.h"
 #include "LSM303.h"
 #include "UI.h"
 #include "Touch.h"
@@ -17,6 +13,7 @@
 #include "lvgl.h"
 #include "../lv_conf.h"
 #include "map_component.h"
+#include "SDCard.h"
 
 sqlite3* addrDb;
 Touch touch;
@@ -48,11 +45,12 @@ unsigned long gpsUpdateAfterMs;
 
 static char path_name[MAX_FILENAME_LENGTH];
 
-auto spiSD = SPIClass(VSPI);
-
 
 #define DRAW_BUF_SIZE (SCREEN_WIDTH * SCREEN_HEIGHT / 10 * (LV_COLOR_DEPTH / 8))
-uint32_t draw_buf[DRAW_BUF_SIZE / 4];
+uint32_t buf1[DRAW_BUF_SIZE];
+// uint32_t buf2[DRAW_BUF_SIZE];
+
+
 #if LV_USE_LOG != 0
 void my_print(lv_log_level_t level, const char* buf) {
   LV_UNUSED(level);
@@ -62,10 +60,10 @@ void my_print(lv_log_level_t level, const char* buf) {
 #endif
 
 /* LVGL calls it when a rendered image needs to copied to the display*/
-void my_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
-  TFT.pushImage(area->x1, area->y1, lv_area_get_width(area), lv_area_get_height(area), px_map);
-  lv_display_flush_ready(disp);
-}
+// void my_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
+//   TFT.pushImage(area->x1, area->y1, lv_area_get_width(area), lv_area_get_height(area), px_map, true);
+//   lv_display_flush_ready(disp);
+// }
 
 /*Read the touchpad*/
 void my_touchpad_read(lv_indev_t* indev, lv_indev_data_t* data) {
@@ -87,18 +85,17 @@ static uint32_t my_tick(void) {
   return millis();
 }
 
-
 const char* getTilePath(int z, int x, int y) {
   std::snprintf(path_name, sizeof(path_name), "/tiles/%d/%d/%d.png", z, x, y);
   return path_name;
 }
 
 inline void drawTile(int x, int y, int sx, int sy) {
-  int x2 = sx + TILE_SIZE;
-  int y2 = sy + TILE_SIZE;
-  if (sx <= SCREEN_WIDTH && x2 >= 0 && sy <= SCREEN_HEIGHT && y2 >= 0) {
-    drawPngTile(getTilePath(zoom, x, y), sx, sy);
-  }
+  // int x2 = sx + TILE_SIZE;
+  // int y2 = sy + TILE_SIZE;
+  // if (sx <= SCREEN_WIDTH && x2 >= 0 && sy <= SCREEN_HEIGHT && y2 >= 0) {
+  //   drawPngTile(getTilePath(zoom, x, y), sx, sy);
+  // }
 }
 
 void drawMyMarker() {
@@ -306,11 +303,11 @@ void setup() {
 #ifndef DISABLE_TFT
   LOGI("Init TFT ");
   TFT.init();
-  TFT.setAttribute(UTF8_SWITCH, 1);
+  // TFT.setAttribute(UTF8_SWITCH, 1);
   TFT.setRotation(2);
-  TFT.fillScreen(TFT_BLACK);
-  TFT.setTextColor(TFT_BLACK);
-  TFT.setFreeFont(&FreeMono9pt7b); // custom with Polish letters
+  // TFT.fillScreen(TFT_BLACK);
+  // TFT.setTextColor(TFT_BLACK);
+  // TFT.setFreeFont(&FreeMono9pt7b); // custom with Polish letters
   LOG("ok");
 #endif
 
@@ -399,15 +396,22 @@ void setup() {
   ServerSetup();
 #endif
 
+  SDCard::init();
 
   lv_init();
+
   /*Set a tick source so that LVGL will know how much time elapsed. */
   lv_tick_set_cb(my_tick);
 #if LV_USE_LOG != 0
   lv_log_register_print_cb(my_print);
 #endif
 
-  lv_tft_espi_create(SCREEN_WIDTH, SCREEN_HEIGHT, draw_buf, sizeof(draw_buf));
+  // lv_display_t* disp;
+  // disp = lv_display_create(SCREEN_WIDTH, SCREEN_HEIGHT);
+  // lv_display_set_flush_cb(disp, my_disp_flush);
+  // lv_display_set_buffers(disp, buf1, buf2, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+  lv_tft_espi_create(SCREEN_WIDTH, SCREEN_HEIGHT, buf1, sizeof(buf1));
 
   lv_indev_t* indev = lv_indev_create();
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
@@ -415,11 +419,7 @@ void setup() {
 
   lv_obj_t* screen = lv_scr_act();
 
-  mapComponent = new MapComponent(screen);
-  mapComponent->set_tile_size(TILE_SIZE);
-  mapComponent->set_map_path("tiles");
-  mapComponent->set_initial_tile_position(144630, 83682);
-  // mapComponent->set_initial_geographic_position(54.3516, 18.6466, 18);
+  mapComponent = new MapComponent(screen, centerLoc.lat, centerLoc.lon, zoom);
 
 
   LOG("---------------- Init done ----------------");

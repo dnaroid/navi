@@ -7,9 +7,9 @@
 // #define DISABLE_TFT
 #define DISABLE_UI
 // #define DISABLE_TOUCH
-// #define DISABLE_SD
+#define DISABLE_SD
 #define DISABLE_DB
-// #define DISABLE_TILE_CACHE
+#define DISABLE_TILE_CACHE
 #define DISABLE_SERVER
 #define DISABLE_COMPASS
 #define DISABLE_GPS
@@ -17,10 +17,10 @@
 #define TINY_GSM_MODEM_SIM800
 
 /// --- pins
-#define SD_CS 18
-#define SD_MOSI 17
-#define SD_SCK 16
-#define SD_MISO 15
+// #define SD_CS 18
+// #define SD_MOSI 17
+// #define SD_SCK 16
+// #define SD_MISO 15
 
 #define TFT_MOSI 11
 #define TFT_MISO 13
@@ -44,8 +44,10 @@
 #define SCREEN_CENTER_X 160
 #define SCREEN_CENTER_Y 240
 #define TILE_SIZE 256
-#define TILES_X_SCAN {0,1,-1,2,-2}
-#define TILES_Y_SCAN {0,1,-1,2,-2}
+#define TILES_X_SCAN {0,1,-1}
+#define TILES_Y_SCAN {0,1,-1}
+// #define TILES_X_SCAN {0,1,-1,2,-2}
+// #define TILES_Y_SCAN {0,1,-1,2,-2}
 #define BUTTON_PRESS_ANIM_TIME 500
 #define MY_MARKER_R 10
 #define MY_MARKER_R2 3
