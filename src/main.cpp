@@ -303,6 +303,7 @@ void setup() {
 #ifndef DISABLE_TFT
   LOGI("Init TFT ");
   TFT.init();
+  TFT.initDMA();
   // TFT.setAttribute(UTF8_SWITCH, 1);
   TFT.setRotation(2);
   // TFT.fillScreen(TFT_BLACK);

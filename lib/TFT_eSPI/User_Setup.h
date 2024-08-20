@@ -14,6 +14,8 @@
 // Define to disable all #warnings in library (can be put in User_Setup_Select.h)
 #define DISABLE_ALL_LIBRARY_WARNINGS
 
+#define USE_DMA
+
 // ##################################################################################
 //
 // Section 1. Call up the right driver file and any options for it
