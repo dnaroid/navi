@@ -1,6 +1,5 @@
 #ifndef COORD_H
 #define COORD_H
-#include <Touch.h>
 
 class coord {
 public:
@@ -28,12 +27,12 @@ public:
     return Location{lon, lat};
   }
 
-  static Location pointToLocation(Pos point, Location cursorLoc, int zoom) {
-    Point centerPixels = locationToPixels(cursorLoc, zoom);
-    int pixelX = point.x + centerPixels.x - SCREEN_CENTER_X;
-    int pixelY = point.y + centerPixels.y - SCREEN_CENTER_Y;
-    return pixelsToLocation(Point{pixelX, pixelY}, zoom);
-  }
+  // static Location pointToLocation(Pos point, Location cursorLoc, int zoom) {
+  //   Point centerPixels = locationToPixels(cursorLoc, zoom);
+  //   int pixelX = point.x + centerPixels.x - SCREEN_CENTER_X;
+  //   int pixelY = point.y + centerPixels.y - SCREEN_CENTER_Y;
+  //   return pixelsToLocation(Point{pixelX, pixelY}, zoom);
+  // }
 
   static double haversineDistance(Location loc1, Location loc2) {
     const double R = 6371;

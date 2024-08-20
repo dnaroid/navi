@@ -15,7 +15,8 @@ int map(int x, int in_min, int in_max, int out_min, int out_max) {
 }
 
 bool initTouch() {
-  Wire.begin(I2C_SDA, I2C_SCL);
+  // Wire.begin(I2C_SDA, I2C_SCL);
+  // delay(100);
   byte error, address;
   Wire.beginTransmission(NS2009_ADDR);
   error = Wire.endTransmission();

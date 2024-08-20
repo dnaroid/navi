@@ -17,18 +17,7 @@
 #define TINY_GSM_MODEM_SIM800
 
 /// --- pins
-// #define SD_CS 18
-// #define SD_MOSI 17
-// #define SD_SCK 16
-// #define SD_MISO 15
-
-#define TFT_MOSI 11
-#define TFT_MISO 13
-#define TFT_SCLK 12
-#define TFT_CS 10
-#define TFT_DC 14
-
-#define I2C_SDA 8
+#define I2C_SDA 18
 #define I2C_SCL 9
 
 #define GPS_RX 47

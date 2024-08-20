@@ -1,26 +1,20 @@
-#include <lwip/mem.h>
-
 #include "globals.h"
-#include "Wire.h"
-#include "TFT_eSPI.h"
 #include "WiFi.h"
 #include "coord.h"
 #include "LSM303.h"
-#include "UI.h"
-#include "Touch.h"
 #include "sqlite3.h"
 #include "PathFinder.h"
 #include "lvgl.h"
 #include "../lv_conf.h"
-#include "map_component.h"
+#include "MapUI.h"
 #include "SDCard.h"
+#include "Touch.h"
+#include "Display.h"
 
 sqlite3* addrDb;
-Touch touch;
-UI ui;
 LSM303 compass;
 PathFinder pathFinder;
-MapComponent* mapComponent;
+MapUI* mapUI;
 
 char* zErrMsg = nullptr;
 int rc;
@@ -44,46 +38,6 @@ unsigned long compassUpdateAfterMs;
 unsigned long gpsUpdateAfterMs;
 
 static char path_name[MAX_FILENAME_LENGTH];
-
-
-#define DRAW_BUF_SIZE (SCREEN_WIDTH * SCREEN_HEIGHT / 10 * (LV_COLOR_DEPTH / 8))
-uint32_t buf1[DRAW_BUF_SIZE];
-// uint32_t buf2[DRAW_BUF_SIZE];
-
-
-#if LV_USE_LOG != 0
-void my_print(lv_log_level_t level, const char* buf) {
-  LV_UNUSED(level);
-  Serial.println(buf);
-  Serial.flush();
-}
-#endif
-
-/* LVGL calls it when a rendered image needs to copied to the display*/
-// void my_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
-//   TFT.pushImage(area->x1, area->y1, lv_area_get_width(area), lv_area_get_height(area), px_map, true);
-//   lv_display_flush_ready(disp);
-// }
-
-/*Read the touchpad*/
-void my_touchpad_read(lv_indev_t* indev, lv_indev_data_t* data) {
-  int touch_pos[2] = {0, 0};
-  bool touched = ns2009_pos(touch_pos);
-
-  if (!touched) {
-    data->state = LV_INDEV_STATE_RELEASED;
-  } else {
-    data->state = LV_INDEV_STATE_PRESSED;
-
-    data->point.x = touch_pos[0];
-    data->point.y = touch_pos[1];
-  }
-}
-
-/*use Arduinos millis() as tick source*/
-static uint32_t my_tick(void) {
-  return millis();
-}
 
 const char* getTilePath(int z, int x, int y) {
   std::snprintf(path_name, sizeof(path_name), "/tiles/%d/%d/%d.png", z, x, y);
@@ -155,55 +109,55 @@ void drawMap() {
 }
 
 void showAddresses() {
-  int id = 0;
-  for (const auto res : foundAddrs) {
-    ui.findButtonById(id++).caption(res.name).visible(true);
-  }
-  ui.update();
+  // int id = 0;
+  // for (const auto res : foundAddrs) {
+  //   ui.findButtonById(id++).caption(res.name).visible(true);
+  // }
+  // ui.update();
 }
 
 void toggleKeyboard() {
-  isKeyboardActive = !isKeyboardActive;
-  if (!isKeyboardActive) {
-    drawMap();
-  } else {
-    ui.findInputById('a').clear();
-    ui.toggleBtnByType('a', false);
-  }
-  ui.findInputById('a').visible(isKeyboardActive);
-  ui.toggleBtnByType('k', isKeyboardActive);
-  ui.update();
+  // isKeyboardActive = !isKeyboardActive;
+  // if (!isKeyboardActive) {
+  //   drawMap();
+  // } else {
+  //   ui.findInputById('a').clear();
+  //   ui.toggleBtnByType('a', false);
+  // }
+  // ui.findInputById('a').visible(isKeyboardActive);
+  // ui.toggleBtnByType('k', isKeyboardActive);
+  // ui.update();
 }
 
-void onAddressPressed(const Button& btn) {
-  centerLoc = foundAddrs[btn.id].location;
-  targetLoc = centerLoc;
-  drawMap();
-  for (int i = 0; i < ADDR_SEARCH_LIMIT; i++) ui.findButtonById(i).caption("").visible(false);
-  ui.update();
-}
+// void onAddressPressed(const Button& btn) {
+//   centerLoc = foundAddrs[btn.id].location;
+//   targetLoc = centerLoc;
+//   drawMap();
+//   for (int i = 0; i < ADDR_SEARCH_LIMIT; i++) ui.findButtonById(i).caption("").visible(false);
+//   ui.update();
+// }
 
-void onZoomBtnPressed(const Button& btnZoom) {
-  ui.update();
-  zoom += btnZoom.text == "+" ? 1 : -1;
-  ui.findButtonByText("+").enabled(zoom < 18);
-  ui.findButtonByText("-").enabled(zoom > 12);
-  drawMap();
-  ui.update();
-}
+// void onZoomBtnPressed(const Button& btnZoom) {
+//   ui.update();
+//   zoom += btnZoom.text == "+" ? 1 : -1;
+//   ui.findButtonByText("+").enabled(zoom < 18);
+//   ui.findButtonByText("-").enabled(zoom > 12);
+//   drawMap();
+//   ui.update();
+// }
 
-void onAddrBtnPressed(Button& btnAddr) {
-  btnAddr._pressed = isKeyboardActive;
-  btnAddr.updateAfterMs = 0;
-  toggleKeyboard();
-}
+// void onAddrBtnPressed(Button& btnAddr) {
+//   btnAddr._pressed = isKeyboardActive;
+//   btnAddr.updateAfterMs = 0;
+//   toggleKeyboard();
+// }
 
-void onRouteBtnPressed(Button& _) {
-  ui.update();
-  pathFinder.findPath(myLoc.lat ? myLoc : centerLoc, targetLoc);
-  drawMap();
-  ui.update();
-}
+// void onRouteBtnPressed(Button& _) {
+//   ui.update();
+//   pathFinder.findPath(myLoc.lat ? myLoc : centerLoc, targetLoc);
+//   drawMap();
+//   ui.update();
+// }
 
 void searchAddress(const String& text) {
   foundAddrs.clear();
@@ -225,61 +179,61 @@ void searchAddress(const String& text) {
   showAddresses();
 }
 
-void onAddrType(Button& btn) {
-  Input& inp = ui.findInputById('a');
-  if (btn.text == "<") {
-    inp.removeChar();
-    ui.drawInput(inp);
-  } else if (btn.text == ">") {
-    ui.update();
-    searchAddress(inp.text);
-    toggleKeyboard();
-  } else {
-    inp.addChar(btn.text[0]);
-    ui.drawInput(inp);
-  }
-}
+// void onAddrType(Button& btn) {
+//   Input& inp = ui.findInputById('a');
+//   if (btn.text == "<") {
+//     inp.removeChar();
+//     ui.drawInput(inp);
+//   } else if (btn.text == ">") {
+//     ui.update();
+//     searchAddress(inp.text);
+//     toggleKeyboard();
+//   } else {
+//     inp.addChar(btn.text[0]);
+//     ui.drawInput(inp);
+//   }
+// }
 
-void onClick(const Pos& p) {
-#ifndef DISABLE_UI
-  if (!ui.processPress(p.x, p.y)) {
-    targetLoc = coord::pointToLocation(p, centerLoc, zoom);
-    ui.findButtonByText("R").enabled(true);
-    drawMap();
-    ui.update();
-  }
-#endif
-}
+// void onClick(const Pos& p) {
+// #ifndef DISABLE_UI
+//   if (!ui.processPress(p.x, p.y)) {
+//     targetLoc = coord::pointToLocation(p, centerLoc, zoom);
+//     ui.findButtonByText("R").enabled(true);
+//     drawMap();
+//     ui.update();
+//   }
+// #endif
+// }
+//
+// void onDrag(const Pos& p) {
+//   Point start = coord::locationToPixels(centerLoc, zoom);
+//   Point end = {start.x - p.dx, start.y - p.dy};
+//   centerLoc = coord::pixelsToLocation(end, zoom);
+//   drawMap();
+// #ifndef DISABLE_UI
+//   ui.updateAfter(ANIM_MS * 2);
+// #endif
+// }
 
-void onDrag(const Pos& p) {
-  Point start = coord::locationToPixels(centerLoc, zoom);
-  Point end = {start.x - p.dx, start.y - p.dy};
-  centerLoc = coord::pixelsToLocation(end, zoom);
-  drawMap();
-#ifndef DISABLE_UI
-  ui.updateAfter(ANIM_MS * 2);
-#endif
-}
-
-void createKeyboard() {
-  constexpr char _keys[] = KEYBOARD;
-  int idx = 0;
-  for (int y = 0; y < 5; y++) {
-    for (int x = 0; x < 10; x++) {
-      if (idx == 40) break;
-      ui.addButton(_keys[idx++], x * (BUTTON_W + BUTTON_SPACING) + KEYBOARD_X, y * (BUTTON_H + BUTTON_SPACING) + KEYBOARD_Y)
-        .type('k')
-        .visible(false)
-        .onPress(onAddrType);
-    }
-  }
-  constexpr int addrH = SCREEN_HEIGHT / ADDR_SEARCH_LIMIT;
-  for (int i = 0; i < ADDR_SEARCH_LIMIT; i++) // addresses
-    ui.addButton("", 0, i * addrH,SCREEN_WIDTH, addrH, i)
-      .visible(false)
-      .type('a')
-      .onPress(onAddressPressed);
-}
+// void createKeyboard() {
+//   constexpr char _keys[] = KEYBOARD;
+//   int idx = 0;
+//   for (int y = 0; y < 5; y++) {
+//     for (int x = 0; x < 10; x++) {
+//       if (idx == 40) break;
+//       ui.addButton(_keys[idx++], x * (BUTTON_W + BUTTON_SPACING) + KEYBOARD_X, y * (BUTTON_H + BUTTON_SPACING) + KEYBOARD_Y)
+//         .type('k')
+//         .visible(false)
+//         .onPress(onAddrType);
+//     }
+//   }
+//   constexpr int addrH = SCREEN_HEIGHT / ADDR_SEARCH_LIMIT;
+//   for (int i = 0; i < ADDR_SEARCH_LIMIT; i++) // addresses
+//     ui.addButton("", 0, i * addrH,SCREEN_WIDTH, addrH, i)
+//       .visible(false)
+//       .type('a')
+//       .onPress(onAddressPressed);
+// }
 
 int dbOpen(const char* filename, sqlite3** db) {
   rc = sqlite3_open(filename, db);
@@ -300,48 +254,6 @@ void setup() {
 
   btStop(); // Bluetooth OFF
 
-#ifndef DISABLE_TFT
-  LOGI("Init TFT ");
-  TFT.init();
-  TFT.initDMA();
-  // TFT.setAttribute(UTF8_SWITCH, 1);
-  TFT.setRotation(2);
-  // TFT.fillScreen(TFT_BLACK);
-  // TFT.setTextColor(TFT_BLACK);
-  // TFT.setFreeFont(&FreeMono9pt7b); // custom with Polish letters
-  LOG("ok");
-#endif
-
-#ifndef DISABLE_UI
-  LOGI("Init UI ");
-  ui.init(TFT);
-  ui.addButton('+', 10, 10).enabled(zoom < 18).onPress(onZoomBtnPressed);
-  ui.addButton('-', 10, 10 + 45).enabled(zoom > 12).onPress(onZoomBtnPressed);
-  ui.addButton('L', 10, 10 + 45 * 2).enabled(false);
-  ui.addButton('A', 10, 10 + 45 * 3).onPress(onAddrBtnPressed);
-  ui.addButton('R', 10, 10 + 45 * 4).enabled(false).onPress(onRouteBtnPressed);
-  ui.addInput(0, KEYBOARD_Y - 40,SCREEN_WIDTH,BUTTON_H, 'a').visible(false);
-  createKeyboard();
-  LOG("ok");
-#endif
-
-#ifndef DISABLE_SD
-  LOGI("Init Card reader");
-  spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  int frq = 80000000;
-  while (!SD.begin(SD_CS, spiSD, frq) && frq > 1000000) {
-    frq -= 1000000;
-    delay(100);
-    LOGI(".");
-  }
-  LOG(" ok");
-  LOGI("Init SD card");
-  while (SD.cardType() == CARD_NONE) {
-    LOGI(".");
-    delay(100);
-  }
-  LOG(" ok");
-#endif
 
 #if !defined(DISABLE_SD) && !defined(DISABLE_DB)
   LOGI("Init DB ");
@@ -352,22 +264,6 @@ void setup() {
     LOG("fail");
   } else {
     pathFinder.init();
-    LOG("ok");
-  }
-#endif
-
-#if !defined(DISABLE_TOUCH) && !defined(DISABLE_COMPASS)
-  Wire.begin(I2C_SDA, I2C_SCL, 0);
-  delay(100);
-#endif
-
-#ifndef DISABLE_TOUCH
-  LOGI("Init Touch ");
-  if (!touch.init()) {
-    LOG("fail");
-  } else {
-    touch.onClick(onClick);
-    touch.onDrag(onDrag);
     LOG("ok");
   }
 #endif
@@ -386,51 +282,18 @@ void setup() {
   compassUpdateAfterMs = now + COMPASS_UPDATE_PERIOD;
 #endif
 
-#ifndef DISABLE_TILE_CACHE
-  LOGI("Init tiles cache ");
-  initializeCache();
-  LOG("ok");
-#endif
-
 #ifndef DISABLE_SERVER
   // WiFi.persistent(false);
   ServerSetup();
 #endif
 
   SDCard::init();
+  Display::init();
+  Touch::init();
 
-  lv_init();
-
-  /*Set a tick source so that LVGL will know how much time elapsed. */
-  lv_tick_set_cb(my_tick);
-#if LV_USE_LOG != 0
-  lv_log_register_print_cb(my_print);
-#endif
-
-  // lv_display_t* disp;
-  // disp = lv_display_create(SCREEN_WIDTH, SCREEN_HEIGHT);
-  // lv_display_set_flush_cb(disp, my_disp_flush);
-  // lv_display_set_buffers(disp, buf1, buf2, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
-
-  lv_tft_espi_create(SCREEN_WIDTH, SCREEN_HEIGHT, buf1, sizeof(buf1));
-
-  lv_indev_t* indev = lv_indev_create();
-  lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
-  lv_indev_set_read_cb(indev, my_touchpad_read);
-
-  lv_obj_t* screen = lv_scr_act();
-
-  mapComponent = new MapComponent(screen, centerLoc.lat, centerLoc.lon, zoom);
-
+  mapUI = new MapUI(lv_scr_act(), centerLoc.lat, centerLoc.lon, zoom);
 
   LOG("---------------- Init done ----------------");
-
-#ifndef DISABLE_TFT
-  // drawMap();
-#ifndef DISABLE_UI
-  // ui.update();
-#endif
-#endif
 }
 
 void loop() {
@@ -441,9 +304,6 @@ void loop() {
   return;
   now = millis();
 
-#ifndef DISABLE_TOUCH
-  touch.update();
-#endif
 
 #ifndef DISABLE_COMPASS
   if (now > compassUpdateAfterMs) {
