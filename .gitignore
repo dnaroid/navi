@@ -1,3 +1,5 @@
 .pio
 .idea
 /lib/Config/secrets.h
+/test/
+/tools/
