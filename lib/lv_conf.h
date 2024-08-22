@@ -83,7 +83,7 @@
  * - LV_OS_RTTHREAD
  * - LV_OS_WINDOWS
  * - LV_OS_CUSTOM */
-#define LV_USE_OS   LV_OS_NONE
+#define LV_USE_OS   LV_OS_FREERTOS
 
 #if LV_USE_OS == LV_OS_CUSTOM
     #define LV_OS_CUSTOM_INCLUDE <stdint.h>
@@ -290,7 +290,7 @@
  *Used by image decoders such as `lv_lodepng` to keep the decoded image in the memory.
  *If size is not set to 0, the decoder will fail to decode when the cache is full.
  *If size is 0, the cache function is not enabled and the decoded mem will be released immediately after use.*/
-#define LV_CACHE_DEF_SIZE       1000000
+#define LV_CACHE_DEF_SIZE       3000000
 
 /*Default number of image header cache entries. The cache is used to store the headers of images
  *The main logic is like `LV_CACHE_DEF_SIZE` but for image headers.*/
@@ -746,27 +746,27 @@
 #define LV_USE_SNAPSHOT 0
 
 /*1: Enable system monitor component*/
-#define LV_USE_SYSMON   0
+#define LV_USE_SYSMON   1
 #if LV_USE_SYSMON
-    /*Get the idle percentage. E.g. uint32_t my_get_idle(void);*/
-    #define LV_SYSMON_GET_IDLE lv_timer_get_idle
+/*Get the idle percentage. E.g. uint32_t my_get_idle(void);*/
+#define LV_SYSMON_GET_IDLE lv_timer_get_idle
 
-    /*1: Show CPU usage and FPS count
-     * Requires `LV_USE_SYSMON = 1`*/
-    #define LV_USE_PERF_MONITOR 0
+/*1: Show CPU usage and FPS count
+ * Requires `LV_USE_SYSMON = 1`*/
+#define LV_USE_PERF_MONITOR 1
 #if LV_USE_PERF_MONITOR
-        #define LV_USE_PERF_MONITOR_POS LV_ALIGN_BOTTOM_RIGHT
+#define LV_USE_PERF_MONITOR_POS LV_ALIGN_BOTTOM_RIGHT
 
-        /*0: Displays performance data on the screen, 1: Prints performance data using log.*/
-        #define LV_USE_PERF_MONITOR_LOG_MODE 0
+/*0: Displays performance data on the screen, 1: Prints performance data using log.*/
+#define LV_USE_PERF_MONITOR_LOG_MODE 0
 #endif
 
-    /*1: Show the used memory and the memory fragmentation
-     * Requires `LV_USE_STDLIB_MALLOC = LV_STDLIB_BUILTIN`
-     * Requires `LV_USE_SYSMON = 1`*/
-    #define LV_USE_MEM_MONITOR 0
+/*1: Show the used memory and the memory fragmentation
+ * Requires `LV_USE_STDLIB_MALLOC = LV_STDLIB_BUILTIN`
+ * Requires `LV_USE_SYSMON = 1`*/
+#define LV_USE_MEM_MONITOR 0
 #if LV_USE_MEM_MONITOR
-        #define LV_USE_MEM_MONITOR_POS LV_ALIGN_BOTTOM_LEFT
+#define LV_USE_MEM_MONITOR_POS LV_ALIGN_BOTTOM_LEFT
 #endif
 
 #endif /*LV_USE_SYSMON*/

@@ -2,10 +2,7 @@
 #define TOUCH_H
 
 
-class Touch {
-public:
-  static void init();
-};
+void Touch_init();
 
 
 #endif //TOUCH_H

@@ -2,10 +2,7 @@
 #define DISPLAY_H
 
 
-class Display {
-public:
-  static void init();
-};
+void Display_init();
 
 
 #endif //DISPLAY_H

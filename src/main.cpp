@@ -1,6 +1,5 @@
 #include "globals.h"
 #include "WiFi.h"
-#include "coord.h"
 #include "LSM303.h"
 #include "sqlite3.h"
 #include "PathFinder.h"
@@ -10,11 +9,11 @@
 #include "SDCard.h"
 #include "Touch.h"
 #include "Display.h"
+// #include "rd.h"
 
 sqlite3* addrDb;
 LSM303 compass;
 PathFinder pathFinder;
-MapUI* mapUI;
 
 char* zErrMsg = nullptr;
 int rc;
@@ -23,7 +22,6 @@ std::vector<Address> foundAddrs; //todo make class
 
 // global vars
 
-int zoom = 14;
 int angle = 0;
 int new_angle = 0;
 float init_lat = 54.3926814;
@@ -37,97 +35,96 @@ bool isShowAddresses = false;
 unsigned long compassUpdateAfterMs;
 unsigned long gpsUpdateAfterMs;
 
-static char path_name[MAX_FILENAME_LENGTH];
 
-const char* getTilePath(int z, int x, int y) {
-  std::snprintf(path_name, sizeof(path_name), "/tiles/%d/%d/%d.png", z, x, y);
-  return path_name;
-}
+// const char* getTilePath(int z, int x, int y) {
+//   std::snprintf(path_name, sizeof(path_name), "/tiles/%d/%d/%d.png", z, x, y);
+//   return path_name;
+// }
 
-inline void drawTile(int x, int y, int sx, int sy) {
-  // int x2 = sx + TILE_SIZE;
-  // int y2 = sy + TILE_SIZE;
-  // if (sx <= SCREEN_WIDTH && x2 >= 0 && sy <= SCREEN_HEIGHT && y2 >= 0) {
-  //   drawPngTile(getTilePath(zoom, x, y), sx, sy);
-  // }
-}
+// inline void drawTile(int x, int y, int sx, int sy) {
+//   // int x2 = sx + TILE_SIZE;
+//   // int y2 = sy + TILE_SIZE;
+//   // if (sx <= SCREEN_WIDTH && x2 >= 0 && sy <= SCREEN_HEIGHT && y2 >= 0) {
+//   //   drawPngTile(getTilePath(zoom, x, y), sx, sy);
+//   // }
+// }
 
-void drawMyMarker() {
-  if (!myLoc.lat) { return; }
-  Point p = coord::locationToScreen(myLoc, centerLoc, zoom);
-  TFT.fillCircle(p.x, p.y, MY_MARKER_R,TFT_BLUE);
-  float angle_rad = angle * DEG_TO_RAD;
-  int offsetX = (MY_MARKER_R - MY_MARKER_R2 - 1) * cos(angle_rad);
-  int offsetY = -(MY_MARKER_R - MY_MARKER_R2 - 1) * sin(angle_rad);
-  TFT.fillCircle(p.x + offsetX, p.y + offsetY, MY_MARKER_R2, TFT_WHITE);
-}
+// void drawMyMarker() {
+//   if (!myLoc.lat) { return; }
+//   Point p = coord::locationToScreen(myLoc, centerLoc, zoom);
+//   TFT.fillCircle(p.x, p.y, MY_MARKER_R,TFT_BLUE);
+//   float angle_rad = angle * DEG_TO_RAD;
+//   int offsetX = (MY_MARKER_R - MY_MARKER_R2 - 1) * cos(angle_rad);
+//   int offsetY = -(MY_MARKER_R - MY_MARKER_R2 - 1) * sin(angle_rad);
+//   TFT.fillCircle(p.x + offsetX, p.y + offsetY, MY_MARKER_R2, TFT_WHITE);
+// }
 
-void drawTargetMarker() {
-  if (!targetLoc.lon) { return; }
-  constexpr int radius = 10;
-  constexpr int dy = -(radius * 1.5);
-  constexpr int color = TFT_BLUE;
-  Point p = coord::locationToScreen(targetLoc, centerLoc, zoom);
-  TFT.fillCircle(p.x, p.y + dy, radius, color);
-  TFT.fillTriangle(p.x - radius, p.y + dy, p.x + radius, p.y + dy, p.x, p.y, color);
-  TFT.fillCircle(p.x, p.y + dy, radius / 3, TFT_WHITE);
-}
+// void drawTargetMarker() {
+//   if (!targetLoc.lon) { return; }
+//   constexpr int radius = 10;
+//   constexpr int dy = -(radius * 1.5);
+//   constexpr int color = TFT_BLUE;
+//   Point p = coord::locationToScreen(targetLoc, centerLoc, zoom);
+//   TFT.fillCircle(p.x, p.y + dy, radius, color);
+//   TFT.fillTriangle(p.x - radius, p.y + dy, p.x + radius, p.y + dy, p.x, p.y, color);
+//   TFT.fillCircle(p.x, p.y + dy, radius / 3, TFT_WHITE);
+// }
 
-void drawRoute() {
-  const auto route = pathFinder.path;
-  if (route.empty()) { return; }
-  Point p1 = coord::locationToScreen(route[0], centerLoc, zoom);
-  for (size_t i = 1; i < route.size(); i++) {
-    const Point p2 = coord::locationToScreen(route[i], centerLoc, zoom);
-    TFT.drawLine(p1.x, p1.y, p2.x, p2.y,TFT_BLUE);
-    TFT.drawLine(p1.x, p1.y + 1, p2.x, p2.y + 1,TFT_BLUE);
-    TFT.drawLine(p1.x, p1.y - 1, p2.x, p2.y - 1,TFT_BLUE);
-    TFT.drawLine(p1.x + 1, p1.y, p2.x + 1, p2.y,TFT_BLUE);
-    TFT.drawLine(p1.x - 1, p1.y, p2.x - 1, p2.y,TFT_BLUE);
-    p1 = p2;
-  }
-}
+// void drawRoute() {
+//   const auto route = pathFinder.path;
+//   if (route.empty()) { return; }
+//   Point p1 = coord::locationToScreen(route[0], centerLoc, zoom);
+//   for (size_t i = 1; i < route.size(); i++) {
+//     const Point p2 = coord::locationToScreen(route[i], centerLoc, zoom);
+//     TFT.drawLine(p1.x, p1.y, p2.x, p2.y,TFT_BLUE);
+//     TFT.drawLine(p1.x, p1.y + 1, p2.x, p2.y + 1,TFT_BLUE);
+//     TFT.drawLine(p1.x, p1.y - 1, p2.x, p2.y - 1,TFT_BLUE);
+//     TFT.drawLine(p1.x + 1, p1.y, p2.x + 1, p2.y,TFT_BLUE);
+//     TFT.drawLine(p1.x - 1, p1.y, p2.x - 1, p2.y,TFT_BLUE);
+//     p1 = p2;
+//   }
+// }
 
-void drawMap() {
-  unsigned long startMillis = millis();
-  Point p = coord::locationToPixels(centerLoc, zoom);
-  int x_tile = p.x / TILE_SIZE;
-  int y_tile = p.y / TILE_SIZE;
-  int x_offset = p.x % TILE_SIZE;
-  int y_offset = p.y % TILE_SIZE;
-  int tile_screen_x = SCREEN_CENTER_X - x_offset;
-  int tile_screen_y = SCREEN_CENTER_Y - y_offset;
-  for (int dx : TILES_X_SCAN) {
-    for (int dy : TILES_Y_SCAN) {
-      drawTile(x_tile + dx, y_tile + dy, tile_screen_x + dx * TILE_SIZE, tile_screen_y + dy * TILE_SIZE);
-    }
-  }
-  LOG("Map render time: ", millis() - startMillis, " ms");
-  drawMyMarker();
-  drawTargetMarker();
-  drawRoute();
-}
+// void drawMap() {
+//   unsigned long startMillis = millis();
+//   Point p = coord::locationToPixels(centerLoc, zoom);
+//   int x_tile = p.x / TILE_SIZE;
+//   int y_tile = p.y / TILE_SIZE;
+//   int x_offset = p.x % TILE_SIZE;
+//   int y_offset = p.y % TILE_SIZE;
+//   int tile_screen_x = SCREEN_CENTER_X - x_offset;
+//   int tile_screen_y = SCREEN_CENTER_Y - y_offset;
+//   for (int dx : TILES_X_SCAN) {
+//     for (int dy : TILES_Y_SCAN) {
+//       drawTile(x_tile + dx, y_tile + dy, tile_screen_x + dx * TILE_SIZE, tile_screen_y + dy * TILE_SIZE);
+//     }
+//   }
+//   LOG("Map render time: ", millis() - startMillis, " ms");
+//   drawMyMarker();
+//   drawTargetMarker();
+//   drawRoute();
+// }
 
-void showAddresses() {
-  // int id = 0;
-  // for (const auto res : foundAddrs) {
-  //   ui.findButtonById(id++).caption(res.name).visible(true);
-  // }
-  // ui.update();
-}
+// void showAddresses() {
+//   // int id = 0;
+//   // for (const auto res : foundAddrs) {
+//   //   ui.findButtonById(id++).caption(res.name).visible(true);
+//   // }
+//   // ui.update();
+// }
 
-void toggleKeyboard() {
-  // isKeyboardActive = !isKeyboardActive;
-  // if (!isKeyboardActive) {
-  //   drawMap();
-  // } else {
-  //   ui.findInputById('a').clear();
-  //   ui.toggleBtnByType('a', false);
-  // }
-  // ui.findInputById('a').visible(isKeyboardActive);
-  // ui.toggleBtnByType('k', isKeyboardActive);
-  // ui.update();
-}
+// void toggleKeyboard() {
+//   // isKeyboardActive = !isKeyboardActive;
+//   // if (!isKeyboardActive) {
+//   //   drawMap();
+//   // } else {
+//   //   ui.findInputById('a').clear();
+//   //   ui.toggleBtnByType('a', false);
+//   // }
+//   // ui.findInputById('a').visible(isKeyboardActive);
+//   // ui.toggleBtnByType('k', isKeyboardActive);
+//   // ui.update();
+// }
 
 // void onAddressPressed(const Button& btn) {
 //   centerLoc = foundAddrs[btn.id].location;
@@ -159,25 +156,25 @@ void toggleKeyboard() {
 //   ui.update();
 // }
 
-void searchAddress(const String& text) {
-  foundAddrs.clear();
-  String modifiedText = text;
-  modifiedText.replace(' ', '%');
-  const String query = "SELECT str, num, lon, lat, details FROM addr WHERE alias LIKE '%"
-    + modifiedText
-    + "%' ORDER BY CAST(num AS INTEGER) ASC LIMIT "
-    + ADDR_SEARCH_LIMIT;
-  const char* queryCStr = query.c_str();
-  sqlite3_exec(addrDb, queryCStr,
-               [](void* data, int argc, char** argv, char** azColName) -> int {
-                 const String name = String(argv[0]) + " " + String(argv[1]) + " " + String(argv[4]);
-                 const float lon = atof(argv[2]);
-                 const float lat = atof(argv[3]);
-                 foundAddrs.push_back(Address{name, {lon, lat}});
-                 return 0;
-               }, (void*)dbData, &zErrMsg);
-  showAddresses();
-}
+// void searchAddress(const String& text) {
+//   foundAddrs.clear();
+//   String modifiedText = text;
+//   modifiedText.replace(' ', '%');
+//   const String query = "SELECT str, num, lon, lat, details FROM addr WHERE alias LIKE '%"
+//     + modifiedText
+//     + "%' ORDER BY CAST(num AS INTEGER) ASC LIMIT "
+//     + ADDR_SEARCH_LIMIT;
+//   const char* queryCStr = query.c_str();
+//   sqlite3_exec(addrDb, queryCStr,
+//                [](void* data, int argc, char** argv, char** azColName) -> int {
+//                  const String name = String(argv[0]) + " " + String(argv[1]) + " " + String(argv[4]);
+//                  const float lon = atof(argv[2]);
+//                  const float lat = atof(argv[3]);
+//                  foundAddrs.push_back(Address{name, {lon, lat}});
+//                  return 0;
+//                }, (void*)dbData, &zErrMsg);
+//   showAddresses();
+// }
 
 // void onAddrType(Button& btn) {
 //   Input& inp = ui.findInputById('a');
@@ -246,8 +243,8 @@ int dbOpen(const char* filename, sqlite3** db) {
 
 void setup() {
   int waitCount = 0;
-  Serial.begin(115200);
-  while (!Serial && waitCount++ < 50) { // 5 seconds
+  while (!Serial.available() && waitCount++ < 50) { // 5 seconds
+    Serial.begin(115200);
     delay(100);
   }
   Serial.println("--------------- started ---------------");
@@ -287,11 +284,11 @@ void setup() {
   ServerSetup();
 #endif
 
-  SDCard::init();
-  Display::init();
-  Touch::init();
+  SDCard_init();
+  Display_init();
+  Touch_init();
 
-  mapUI = new MapUI(lv_scr_act(), centerLoc.lat, centerLoc.lon, zoom);
+  Map_init(centerLoc, 18);
 
   LOG("---------------- Init done ----------------");
 }

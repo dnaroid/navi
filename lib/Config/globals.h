@@ -1,7 +1,7 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
 
-#include "TFT_eSPI.h"
+#include "Arduino.h"
 
 /// --- features disabling
 // #define DISABLE_TFT
@@ -30,22 +30,8 @@
 /// --- screen
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 480
-#define SCREEN_CENTER_X 160
-#define SCREEN_CENTER_Y 240
-#define TILE_SIZE 256
-#define TILES_X_SCAN {0,1,-1}
-#define TILES_Y_SCAN {0,1,-1}
-// #define TILES_X_SCAN {0,1,-1,2,-2}
-// #define TILES_Y_SCAN {0,1,-1,2,-2}
-#define BUTTON_PRESS_ANIM_TIME 500
-#define MY_MARKER_R 10
-#define MY_MARKER_R2 3
-#define BUTTON_W 32
-#define BUTTON_H 32
-#define BUTTON_SPACING 0
-#define KEYBOARD_Y 351
-#define KEYBOARD_X 0
-#define KEYBOARD "1234567890qwertyuiopasdfghjkl<zxcvbnm  >"
+#define SCREEN_CENTER_X (SCREEN_WIDTH/2)
+#define SCREEN_CENTER_Y (SCREEN_HEIGHT/2)
 
 /// --- compass
 #define COMPASS_ANGLE_STEP 10
@@ -53,20 +39,12 @@
 #define COMPASS_MAGNETIC_DECLINATION_D 6
 #define COMPASS_MAGNETIC_DECLINATION_M 43
 
-/// --- cache
-#define MAX_CACHE_SIZE 15
-#define MAX_FILENAME_LENGTH 35
-
 /// --- timing
 #define COMPASS_UPDATE_PERIOD 1000
 #define GPS_UPDATE_PERIOD 10000
 
 /// --- GPS
 #define MIN_COORD_CHANGE 0.0001
-
-/// --- GPRS
-#define MODEM_TX 4
-#define MODEM_RX 5
 
 /// remote
 #define ADDR_SEARCH_LIMIT 5
@@ -106,7 +84,6 @@ struct Address {
   Location location;
 };
 
-extern TFT_eSPI TFT;
 
 inline void print() {
 }
@@ -114,6 +91,7 @@ inline void print() {
 template <typename T, typename... Args>
 void print(T first, Args... args) {
   Serial.print(first);
+  Serial.print(' ');
   print(args...);
 }
 
@@ -135,6 +113,5 @@ void println(Args... args) {
 #endif
 
 #define delay(ms) vTaskDelay(ms / portTICK_PERIOD_MS)
-
 
 #endif //GLOBALS_H

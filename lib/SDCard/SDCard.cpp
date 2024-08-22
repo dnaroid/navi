@@ -1,23 +1,23 @@
 #include "SDCard.h"
-
 #include <esp_err.h>
 #include <esp_vfs_fat.h>
+#include <globals.h>
 #include <sdmmc_cmd.h>
 
-void SDCard::init() {
+void SDCard_init() {
     esp_err_t ret;
 
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = false,
-        .max_files = 5,
-        .allocation_unit_size = 16 * 1024
+        .max_files = 10,
+        .allocation_unit_size = 64 * 1024
     };
     sdmmc_card_t* card;
     const char mount_point[] = MOUNT_POINT;
     printf("Initializing SD card\n");
 
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-    host.max_freq_khz = SDMMC_FREQ_DEFAULT;
+    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
 
     spi_bus_config_t bus_cfg = {
         .mosi_io_num = PIN_NUM_MOSI,
@@ -37,16 +37,8 @@ void SDCard::init() {
     // Modify slot_config.gpio_cd and slot_config.gpio_wp if your board has these signals.
     // sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
 
-#define SDSPI_DEVICE_CONFIG() {\
-.host_id   = SPI2_HOST, \
-.gpio_cs   = GPIO_NUM_18, \
-.gpio_cd   = SDSPI_SLOT_NO_CD, \
-.gpio_wp   = SDSPI_SLOT_NO_WP, \
-.gpio_int  = GPIO_NUM_NC, \
-}
 
     sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG();
-
 
     slot_config.gpio_cs = PIN_NUM_CS;
     slot_config.host_id = spi_host_device_t::SPI2_HOST;
@@ -63,7 +55,7 @@ void SDCard::init() {
                    "Make sure SD card lines have pull-up resistors in place.\n",
                    esp_err_to_name(ret));
         }
-        vTaskDelay(3000);
+        delay(100);
         esp_restart();
         return;
     }

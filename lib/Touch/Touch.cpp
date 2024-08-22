@@ -1,4 +1,3 @@
-
 #include "Touch.h"
 #include <globals.h>
 #include <NS2009.h>
@@ -6,7 +5,7 @@
 #include <indev/lv_indev.h>
 #include <misc/lv_types.h>
 
-void my_touchpad_read(lv_indev_t* indev, lv_indev_data_t* data) {
+static void my_touchpad_read(lv_indev_t* indev, lv_indev_data_t* data) {
   int touch_pos[2] = {0, 0};
   bool touched = ns2009_pos(touch_pos);
 
@@ -20,7 +19,7 @@ void my_touchpad_read(lv_indev_t* indev, lv_indev_data_t* data) {
   }
 }
 
-void Touch::init() {
+void Touch_init() {
   LOGI("Init Touch ");
   Wire.begin(I2C_SDA, I2C_SCL, 0);
   delay(100);

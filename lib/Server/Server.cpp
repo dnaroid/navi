@@ -7,16 +7,16 @@
 #include <WebSocketsServer.h>
 
 
-WebSocketsServer webSocket = WebSocketsServer(81);
+static WebSocketsServer webSocket = WebSocketsServer(81);
 
 #define USE_SERIAL Serial
 
-bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) {
-  TFT.pushImage(x, y, w, h, bitmap);
+static bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) {
+  // tft.pushImage(x, y, w, h, bitmap);
   return true;
 }
 
-void hexdump(const void* mem, uint32_t len, uint8_t cols = 16) {
+static void hexdump(const void* mem, uint32_t len, uint8_t cols = 16) {
   const uint8_t* src = (const uint8_t*)mem;
   USE_SERIAL.printf("\n[HEXDUMP] Address: 0x%08X len: 0x%X (%d)", (ptrdiff_t)src, len, len);
   for (uint32_t i = 0; i < len; i++) {
@@ -29,7 +29,7 @@ void hexdump(const void* mem, uint32_t len, uint8_t cols = 16) {
   USE_SERIAL.printf("\n");
 }
 
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
+static void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
   case WStype_DISCONNECTED:
     USE_SERIAL.printf("[%u] Disconnected!\n", num);
