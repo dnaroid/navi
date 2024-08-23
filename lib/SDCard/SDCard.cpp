@@ -16,7 +16,7 @@ void SDCard_init() {
     const char mount_point[] = MOUNT_POINT;
     LOG("Initializing SD card\n");
 
-    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    sdmmc_host_t host = SDSPI_HOST_CUSTOM();
     host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
 
     spi_bus_config_t bus_cfg = {
@@ -33,7 +33,7 @@ void SDCard_init() {
         return;
     }
 
-    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG();
+    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_CUSTOM();
 
     slot_config.gpio_cs = PIN_NUM_CS;
     slot_config.host_id = spi_host_device_t::SPI2_HOST;

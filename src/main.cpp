@@ -1,75 +1,22 @@
-#include "globals.h"
+#include <PathFinder.h>
+#include <SD.h>
+#include <SDCard.h>
+#include <SPI.h>
 #include "WiFi.h"
 #include "LSM303.h"
 #include "sqlite3.h"
-#include "PathFinder.h"
 #include "lvgl.h"
 #include "../lv_conf.h"
 #include "MapUI.h"
-#include "SDCard.h"
 #include "Touch.h"
 #include "Display.h"
+#include "BootDispatcher.h"
 // #include "rd.h"
 
-sqlite3* addrDb;
-LSM303 compass;
-PathFinder pathFinder;
-
-char* zErrMsg = nullptr;
-int rc;
-const char* dbData = "Callback function called";
-std::vector<Address> foundAddrs; //todo make class
-
-// global vars
-
-int angle = 0;
-int new_angle = 0;
-// 54.393417/18.620855
-float init_lat = 54.393417;
-float init_lon = 18.620855;
-// Location centerLoc = {init_lon, init_lat};
-// Location targetLoc = {0, 0};
-// Location myLoc = centerLoc;
-unsigned int now;
-bool isKeyboardActive = false;
-bool isShowAddresses = false;
-unsigned long compassUpdateAfterMs;
-unsigned long gpsUpdateAfterMs;
-
-
-// const char* getTilePath(int z, int x, int y) {
-//   std::snprintf(path_name, sizeof(path_name), "/tiles/%d/%d/%d.png", z, x, y);
-//   return path_name;
-// }
-
-// inline void drawTile(int x, int y, int sx, int sy) {
-//   // int x2 = sx + TILE_SIZE;
-//   // int y2 = sy + TILE_SIZE;
-//   // if (sx <= SCREEN_WIDTH && x2 >= 0 && sy <= SCREEN_HEIGHT && y2 >= 0) {
-//   //   drawPngTile(getTilePath(zoom, x, y), sx, sy);
-//   // }
-// }
-
-// void drawMyMarker() {
-//   if (!myLoc.lat) { return; }
-//   Point p = coord::locationToScreen(myLoc, centerLoc, zoom);
-//   TFT.fillCircle(p.x, p.y, MY_MARKER_R,TFT_BLUE);
-//   float angle_rad = angle * DEG_TO_RAD;
-//   int offsetX = (MY_MARKER_R - MY_MARKER_R2 - 1) * cos(angle_rad);
-//   int offsetY = -(MY_MARKER_R - MY_MARKER_R2 - 1) * sin(angle_rad);
-//   TFT.fillCircle(p.x + offsetX, p.y + offsetY, MY_MARKER_R2, TFT_WHITE);
-// }
-
-// void drawTargetMarker() {
-//   if (!targetLoc.lon) { return; }
-//   constexpr int radius = 10;
-//   constexpr int dy = -(radius * 1.5);
-//   constexpr int color = TFT_BLUE;
-//   Point p = coord::locationToScreen(targetLoc, centerLoc, zoom);
-//   TFT.fillCircle(p.x, p.y + dy, radius, color);
-//   TFT.fillTriangle(p.x - radius, p.y + dy, p.x + radius, p.y + dy, p.x, p.y, color);
-//   TFT.fillCircle(p.x, p.y + dy, radius / 3, TFT_WHITE);
-// }
+static BootState state;
+static Mode mode = ModeMap;
+static PathFinder pf;
+auto spiSD = SPIClass(FSPI);
 
 // void drawRoute() {
 //   const auto route = pathFinder.path;
@@ -84,77 +31,6 @@ unsigned long gpsUpdateAfterMs;
 //     TFT.drawLine(p1.x - 1, p1.y, p2.x - 1, p2.y,TFT_BLUE);
 //     p1 = p2;
 //   }
-// }
-
-// void drawMap() {
-//   unsigned long startMillis = millis();
-//   Point p = coord::locationToPixels(centerLoc, zoom);
-//   int x_tile = p.x / TILE_SIZE;
-//   int y_tile = p.y / TILE_SIZE;
-//   int x_offset = p.x % TILE_SIZE;
-//   int y_offset = p.y % TILE_SIZE;
-//   int tile_screen_x = SCREEN_CENTER_X - x_offset;
-//   int tile_screen_y = SCREEN_CENTER_Y - y_offset;
-//   for (int dx : TILES_X_SCAN) {
-//     for (int dy : TILES_Y_SCAN) {
-//       drawTile(x_tile + dx, y_tile + dy, tile_screen_x + dx * TILE_SIZE, tile_screen_y + dy * TILE_SIZE);
-//     }
-//   }
-//   LOG("Map render time: ", millis() - startMillis, " ms");
-//   drawMyMarker();
-//   drawTargetMarker();
-//   drawRoute();
-// }
-
-// void showAddresses() {
-//   // int id = 0;
-//   // for (const auto res : foundAddrs) {
-//   //   ui.findButtonById(id++).caption(res.name).visible(true);
-//   // }
-//   // ui.update();
-// }
-
-// void toggleKeyboard() {
-//   // isKeyboardActive = !isKeyboardActive;
-//   // if (!isKeyboardActive) {
-//   //   drawMap();
-//   // } else {
-//   //   ui.findInputById('a').clear();
-//   //   ui.toggleBtnByType('a', false);
-//   // }
-//   // ui.findInputById('a').visible(isKeyboardActive);
-//   // ui.toggleBtnByType('k', isKeyboardActive);
-//   // ui.update();
-// }
-
-// void onAddressPressed(const Button& btn) {
-//   centerLoc = foundAddrs[btn.id].location;
-//   targetLoc = centerLoc;
-//   drawMap();
-//   for (int i = 0; i < ADDR_SEARCH_LIMIT; i++) ui.findButtonById(i).caption("").visible(false);
-//   ui.update();
-// }
-
-// void onZoomBtnPressed(const Button& btnZoom) {
-//   ui.update();
-//   zoom += btnZoom.text == "+" ? 1 : -1;
-//   ui.findButtonByText("+").enabled(zoom < 18);
-//   ui.findButtonByText("-").enabled(zoom > 12);
-//   drawMap();
-//   ui.update();
-// }
-
-// void onAddrBtnPressed(Button& btnAddr) {
-//   btnAddr._pressed = isKeyboardActive;
-//   btnAddr.updateAfterMs = 0;
-//   toggleKeyboard();
-// }
-
-// void onRouteBtnPressed(Button& _) {
-//   ui.update();
-//   pathFinder.findPath(myLoc.lat ? myLoc : centerLoc, targetLoc);
-//   drawMap();
-//   ui.update();
 // }
 
 // void searchAddress(const String& text) {
@@ -177,94 +53,12 @@ unsigned long gpsUpdateAfterMs;
 //   showAddresses();
 // }
 
-// void onAddrType(Button& btn) {
-//   Input& inp = ui.findInputById('a');
-//   if (btn.text == "<") {
-//     inp.removeChar();
-//     ui.drawInput(inp);
-//   } else if (btn.text == ">") {
-//     ui.update();
-//     searchAddress(inp.text);
-//     toggleKeyboard();
-//   } else {
-//     inp.addChar(btn.text[0]);
-//     ui.drawInput(inp);
-//   }
-// }
-
-// void onClick(const Pos& p) {
-// #ifndef DISABLE_UI
-//   if (!ui.processPress(p.x, p.y)) {
-//     targetLoc = coord::pointToLocation(p, centerLoc, zoom);
-//     ui.findButtonByText("R").enabled(true);
-//     drawMap();
-//     ui.update();
-//   }
-// #endif
-// }
-//
-// void onDrag(const Pos& p) {
-//   Point start = coord::locationToPixels(centerLoc, zoom);
-//   Point end = {start.x - p.dx, start.y - p.dy};
-//   centerLoc = coord::pixelsToLocation(end, zoom);
-//   drawMap();
-// #ifndef DISABLE_UI
-//   ui.updateAfter(ANIM_MS * 2);
-// #endif
-// }
-
-// void createKeyboard() {
-//   constexpr char _keys[] = KEYBOARD;
-//   int idx = 0;
-//   for (int y = 0; y < 5; y++) {
-//     for (int x = 0; x < 10; x++) {
-//       if (idx == 40) break;
-//       ui.addButton(_keys[idx++], x * (BUTTON_W + BUTTON_SPACING) + KEYBOARD_X, y * (BUTTON_H + BUTTON_SPACING) + KEYBOARD_Y)
-//         .type('k')
-//         .visible(false)
-//         .onPress(onAddrType);
-//     }
-//   }
-//   constexpr int addrH = SCREEN_HEIGHT / ADDR_SEARCH_LIMIT;
-//   for (int i = 0; i < ADDR_SEARCH_LIMIT; i++) // addresses
-//     ui.addButton("", 0, i * addrH,SCREEN_WIDTH, addrH, i)
-//       .visible(false)
-//       .type('a')
-//       .onPress(onAddressPressed);
-// }
-
-int dbOpen(const char* filename, sqlite3** db) {
-  rc = sqlite3_open(filename, db);
-  if (rc) {
-    LOG("Can't open database: %s\n", sqlite3_errmsg(*db));
-    return rc;
-  }
-  return rc;
-}
 
 void setup() {
-  int waitCount = 0;
-  while (!Serial.available() && waitCount++ < 50) { // 5 seconds
-    Serial.begin(115200);
-    delay(100);
-  }
-  Serial.println("--------------- started ---------------");
+  START_SERIAL
 
   btStop(); // Bluetooth OFF
 
-
-#if !defined(DISABLE_SD) && !defined(DISABLE_DB)
-  LOGI("Init DB ");
-  sqlite3_initialize();
-  if (dbOpen("/sd/addr.db", &addrDb)) return;
-  if (rc != SQLITE_OK) {
-    sqlite3_close(addrDb);
-    LOG("fail");
-  } else {
-    pathFinder.init();
-    LOG("ok");
-  }
-#endif
 
 #ifndef DISABLE_GPS
   gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
@@ -285,22 +79,56 @@ void setup() {
   ServerSetup();
 #endif
 
-  Display_init();
-  SDCard_init();
-  Touch_init();
+  LOGI("Init Card reader");
+  spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  while (!SD.begin(SD_CS, spiSD, 80000000)) {
+    delay(100);
+    LOGI(".");
+  }
+  LOG(" ok");
+  LOGI("Init SD card");
+  while (SD.cardType() == CARD_NONE) {
+    LOGI(".");
+    delay(100);
+  }
+  LOG(" ok");
 
-  Map_init({init_lon, init_lat}, 16);
+  state = readBootState();
+  mode = state.mode;
+
+  switch (mode) {
+  case ModeMap:
+    // SDCard_init();
+    Display_init();
+    Touch_init();
+    Map_init(state.center, state.zoom, state.target, state.distance, state.route);
+    break;
+
+  case ModeRoute:
+    sqlite3_initialize();
+    pf.init();
+    pf.findPath(state.center, state.target);
+    writeBootState({ModeMap, state.center, state.zoom, state.target, pf.path, pf.distance});
+    esp_restart();
+    break;
+
+  case ModeMirror:
+    break;
+  }
 
   LOG("---------------- Init done ----------------");
 }
 
 void loop() {
-  lv_timer_handler(); /* let the GUI do its work */
-  lv_tick_inc(10); // tell LVGL how much time has passed
-  delay(10); /* let this time pass */
+  if (mode == ModeMap) {
+    lv_timer_handler();
+    lv_tick_inc(10);
+    delay(10);
+  } else if (mode == ModeRoute) {
+  } else if (mode == ModeMirror) {
+  }
 
   return;
-  now = millis();
 
 
 #ifndef DISABLE_COMPASS

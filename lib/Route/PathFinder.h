@@ -6,6 +6,8 @@
 #include <limits>
 #include <unordered_map>
 #include <queue>
+#include <sqlite3.h>
+#include "globals.h"
 
 class PathFinder {
 public:
@@ -25,6 +27,7 @@ public:
     using MinHeap = std::priority_queue<std::pair<int, int>, std::vector<std::pair<int, int>>, std::greater<std::pair<int, int>>>;
 
     int init() {
+        sqlite3_initialize();
         sqlite3* db;
         sqlite3_stmt* stmt;
         nodes.clear();
@@ -32,17 +35,19 @@ public:
 
         rc = sqlite3_open("/sd/graph-drive.db", &db);
         if (rc != SQLITE_OK) {
-            std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
+            LOG("Cannot open database: ", sqlite3_errmsg(db));
             return rc;
         }
+        LOG("Opened database successfully");
 
         const auto nodeQuery = "SELECT id, x, y FROM nodes";
         rc = sqlite3_prepare_v2(db, nodeQuery, -1, &stmt, nullptr);
         if (rc != SQLITE_OK) {
-            std::cerr << "Failed to fetch nodes: " << sqlite3_errmsg(db) << std::endl;
+            LOG("Failed to fetch nodes: ", sqlite3_errmsg(db));
             sqlite3_close(db);
             return rc;
         }
+        LOG("Fetched nodes successfully");
 
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             int id = sqlite3_column_int(stmt, 0);
@@ -55,10 +60,11 @@ public:
         const auto edgeQuery = "SELECT source, target, weight FROM edges";
         rc = sqlite3_prepare_v2(db, edgeQuery, -1, &stmt, nullptr);
         if (rc != SQLITE_OK) {
-            std::cerr << "Failed to fetch edges: " << sqlite3_errmsg(db) << std::endl;
+            LOG("Failed to fetch edges: ", sqlite3_errmsg(db));
             sqlite3_close(db);
             return rc;
         }
+        LOG("Fetched edges successfully");
 
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             int source = sqlite3_column_int(stmt, 0);
@@ -69,6 +75,7 @@ public:
         sqlite3_finalize(stmt);
         sqlite3_close(db);
 
+        LOG("Init ok");
         return SQLITE_OK;
     }
 
@@ -130,7 +137,7 @@ public:
             py = node.y;
         }
         nodePath.clear();
-        print("->126:PathFinder.h distance, km:", distance);
+        LOG("Found path, istance:", distance, "km");
         return path.size();
     }
 

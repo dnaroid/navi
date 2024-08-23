@@ -1,15 +1,14 @@
 #include "MapUI.h"
 #include "lvgl.h"
-#include <globals.h>
+#include <BootDispatcher.h>
+#include <secrets.h>
 #include <vector>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+
+// #define DEBUG_TILE
 
 #define TILE_SIZE 256
 #define TILES_X_SCAN {0,-1,1}
 #define TILES_Y_SCAN {0,-1,1}
-// #define TILES_X_SCAN {0,1,-1,2,-2}
-// #define TILES_Y_SCAN {0,1,-1,2,-2}
 #define MARKERS_TO_RENDER 1
 #define ZOOM_MIN 12
 #define ZOOM_MAX 18
@@ -31,8 +30,7 @@ struct Tile {
 struct Marker {
     lv_obj_t* obj;
     Location loc;
-    int x;
-    int y;
+    lv_point_t pos;
 };
 
 static Location centerLoc;
@@ -42,12 +40,15 @@ static lv_obj_t* map_bg;
 static lv_obj_t* btn_zoom_in;
 static lv_obj_t* btn_zoom_out;
 static lv_obj_t* btn_gps;
-
+static lv_obj_t* btn_route;
 static Marker marker_me;
 static Marker marker_target;
 
 static std::vector<Tile> tiles;
 static std::vector<Marker> markers;
+
+static std::vector<Location> route = {};
+static float distance = -1;
 
 static lv_point_t locToPx(Location loc, int zoom) {
     int n = 1 << zoom;
@@ -81,15 +82,11 @@ static Location pointToLocation(lv_point_t point, Location cursorLoc, int zoom) 
 }
 
 static void update_markers() {
-    for (auto& m : markers) {
-        LOG("loc", m.loc.lon, m.loc.lat);
-        auto c = locToCenterOffsetPx(m.loc, centerLoc, zoom);
-        LOG("prev xy", m.x, m.y);
-        m.x = c.x;
-        m.y = c.y;
-        lv_obj_set_pos(m.obj, m.x, m.y);
-        LOG("new  xy", m.x, m.y);
-    }
+    marker_me.pos = locToCenterOffsetPx(marker_me.loc, centerLoc, zoom);
+    lv_obj_set_pos(marker_me.obj, marker_me.pos.x, marker_me.pos.y);
+
+    marker_target.pos = locToCenterOffsetPx(marker_target.loc, centerLoc, zoom);
+    lv_obj_set_pos(marker_target.obj, marker_target.pos.x, marker_target.pos.y);
 }
 
 static void update_map() {
@@ -127,9 +124,15 @@ static void update_buttons() {
     } else {
         lv_obj_clear_state(btn_zoom_in, LV_STATE_DISABLED);
     }
+
+    if (lv_obj_has_flag(marker_target.obj, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_add_state(btn_route, LV_STATE_DISABLED);
+    } else {
+        lv_obj_clear_state(btn_route, LV_STATE_DISABLED);
+    }
 }
 
-static void onDrag(lv_event_t* e) {
+static void onDragTile(lv_event_t* e) {
     const lv_indev_t* indev = lv_indev_get_act();
     if (indev == NULL) return;
     lv_point_t delta;
@@ -145,11 +148,12 @@ static void onDrag(lv_event_t* e) {
     update_markers();
 }
 
-static void onZoom(lv_event_t* e) {
+static void onClickZoom(lv_event_t* e) {
     void* btn = lv_event_get_target(e);
     int zoom_change = (btn == btn_zoom_in) ? 1 : -1;
     int new_zoom = zoom + zoom_change;
     if (new_zoom == zoom) return;
+    lv_cache_drop_all_cb_t();
     zoom = new_zoom;
     update_map();
     update_markers();
@@ -162,29 +166,31 @@ static void onClickTile(lv_event_t* e) {
     lv_point_t vect;
     lv_indev_get_vect(indev, &vect);
     if (abs(vect.x) > DRAG_THRESHOLD || abs(vect.y) > DRAG_THRESHOLD) { return; }
-    lv_obj_t* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
+    const auto* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
     for (auto& t : tiles) {
         if (t.obj == obj) {
             lv_point_t point;
             lv_indev_get_point(lv_indev_get_act(), &point);
-            auto new_location = pointToLocation(point, centerLoc, zoom);
+            marker_target.loc = pointToLocation(point, centerLoc, zoom);
             lv_obj_clear_flag(marker_target.obj, LV_OBJ_FLAG_HIDDEN);
-            LOG("prev loc", marker_target.loc.lon, marker_target.loc.lat);
-            marker_target.loc = new_location;
-            LOG("new  loc", marker_target.loc.lon, marker_target.loc.lat);
-
             update_markers();
+            update_buttons();
             break;
         }
     }
 }
 
-static void onGps(lv_event_t* e) {
+static void onClickGps(lv_event_t* e) {
     centerLoc = {18.620855, 54.393417};
     zoom = 16;
     update_map();
     update_markers();
     update_buttons();
+}
+
+static void onClickRoute(lv_event_t* e) {
+    writeBootState({ModeRoute, centerLoc, zoom, marker_target.loc});
+    esp_restart();
 }
 
 static lv_obj_t* create_btn(const char* label, const int32_t x, const int32_t y, const lv_event_cb_t onClick, const int32_t w = 40, const int32_t h = 40) {
@@ -203,6 +209,7 @@ static void create_map() {
     lv_obj_set_size(map_bg, lv_pct(100), lv_pct(100));
     lv_obj_align(map_bg, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_clear_flag(map_bg, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_radius(map_bg, 0, 0);
 
     lv_point_t centerPx = locToPx(centerLoc, zoom);
     int tile_x = centerPx.x / TILE_SIZE;
@@ -222,14 +229,17 @@ static void create_map() {
                 dy,
                 0
             };
-            /*static lv_style_t style;
+#ifdef DEBUG_TILE
+            static lv_style_t style;
             lv_style_init(&style);
             lv_style_set_border_width(&style, 1);
             lv_style_set_border_color(&style, lv_color_hex(0xFF0000));
-            lv_obj_add_style(new_tile.obj, &style, LV_PART_MAIN);*/
+            lv_obj_add_style(t.obj, &style, LV_PART_MAIN);
+            lv_obj_set_size(t.obj, TILE_SIZE, ERR_TIMEOUT);
+#endif
             lv_obj_align(t.obj, LV_ALIGN_TOP_LEFT, 0, 0);
             lv_obj_add_flag(t.obj, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_add_event_cb(t.obj, onDrag, LV_EVENT_PRESSING, NULL);
+            lv_obj_add_event_cb(t.obj, onDragTile, LV_EVENT_PRESSING, NULL);
             lv_obj_add_event_cb(t.obj, onClickTile, LV_EVENT_CLICKED, NULL);
 
             tiles.push_back(t);
@@ -240,54 +250,50 @@ static void create_map() {
 
 static void create_buttons() {
     int x = 2, y = 10, step = 50;
-    btn_zoom_in = create_btn(LV_SYMBOL_PLUS, x, y, onZoom);
+    btn_zoom_in = create_btn(LV_SYMBOL_PLUS, x, y, onClickZoom);
     y += step;
-    btn_zoom_out = create_btn(LV_SYMBOL_MINUS, x, y, onZoom);
+    btn_zoom_out = create_btn(LV_SYMBOL_MINUS, x, y, onClickZoom);
     y += step;
-    btn_gps = create_btn(LV_SYMBOL_GPS, x, y, onGps);
+    btn_gps = create_btn(LV_SYMBOL_GPS, x, y, onClickGps);
+    y += step;
+    btn_route = create_btn(LV_SYMBOL_SHUFFLE, x, y, onClickRoute);
 
     update_buttons();
 }
 
-static void create_markers() {
-    auto c = locToCenterOffsetPx(centerLoc, centerLoc, zoom);
-
-    auto trg = lv_label_create(map_bg);
-    lv_label_set_text(trg, LV_SYMBOL_DOWNLOAD);
-    lv_obj_set_style_text_color(trg, lv_color_hex(0x0000FF), 0);
-    lv_obj_align(trg, LV_ALIGN_CENTER, 0, 0);
-    marker_target = {trg, {0, 0}, 0, 0};
-    lv_obj_add_flag(trg, LV_OBJ_FLAG_HIDDEN);
+static void create_markers(Location target) {
+    marker_target = {lv_label_create(map_bg), target, {0, 0}};
+    lv_label_set_text(marker_target.obj, LV_SYMBOL_DOWNLOAD);
+    lv_obj_set_style_text_color(marker_target.obj, lv_color_hex(0x0000FF), 0);
+    lv_obj_align(marker_target.obj, LV_ALIGN_CENTER, 0, 0);
+    if (target.lat == 0.0) {
+        lv_obj_add_flag(marker_target.obj, LV_OBJ_FLAG_HIDDEN);
+    }
     markers.push_back(marker_target);
 
-    // auto me = lv_label_create(map_bg);
-    // lv_label_set_text(me, LV_SYMBOL_PLAY);
-    // lv_obj_set_style_transform_angle(me, -900, 0);
-    // lv_obj_set_style_text_color(me, lv_color_hex(0x0000FF), 0);
-    // lv_obj_align(me, LV_ALIGN_CENTER, 0, 0);
-    // lv_obj_set_pos(me, c.x, c.y);
-    // marker_me = {me, centerLoc, c.x, c.y};
-    // markers.push_back(marker_me);
+    marker_me = {lv_label_create(map_bg), centerLoc, locToCenterOffsetPx(centerLoc, centerLoc, zoom)};
+    lv_label_set_text(marker_me.obj, LV_SYMBOL_PLAY);
+    lv_obj_set_style_transform_angle(marker_me.obj, -900, 0);
+    lv_obj_set_style_text_color(marker_me.obj, lv_color_hex(0x0000FF), 0);
+    lv_obj_align(marker_me.obj, LV_ALIGN_CENTER, 0, 0);
+    markers.push_back(marker_me);
 
     update_markers();
 }
 
-void Map_init(Location center, int initZoom) {
+void Map_init(Location center, int initZoom, Location target, float distance, std::vector<Location> route) {
     LOGI("Init Map");
     centerLoc = center;
     zoom = initZoom;
 
     create_map();
-    create_markers();
+    create_markers(target);
     create_buttons();
 
     LOG(" ok");
 }
 
-void Map_destroy() {
-    lv_obj_del(map_bg);
-    lv_obj_del(marker_me.obj);
-    for (const auto& tile : tiles) {
-        lv_obj_del(tile.obj);
-    }
+void Map_setRoute(const std::vector<Location>& path, const float dist) {
+    route = path;
+    distance = dist;
 }

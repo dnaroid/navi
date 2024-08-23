@@ -3,12 +3,14 @@
 
 #include "Arduino.h"
 
+#define INIT_ZOOM 16
+
 /// --- features disabling
 // #define DISABLE_TFT
 #define DISABLE_UI
 // #define DISABLE_TOUCH
-#define DISABLE_SD
-#define DISABLE_DB
+// #define DISABLE_SD
+// #define DISABLE_DB
 #define DISABLE_TILE_CACHE
 #define DISABLE_SERVER
 #define DISABLE_COMPASS
@@ -17,6 +19,11 @@
 #define TINY_GSM_MODEM_SIM800
 
 /// --- pins
+#define SD_CS 7
+#define SD_MOSI 17
+#define SD_SCK 16
+#define SD_MISO 15
+
 #define I2C_SDA 18
 #define I2C_SCL 9
 
@@ -118,3 +125,10 @@ void println(Args... args) {
 #define delay(ms) vTaskDelay(ms / portTICK_PERIOD_MS)
 
 #endif //GLOBALS_H
+
+#define START_SERIAL int waitCount = 0;\
+while (!Serial.available() && waitCount++ < 50) { \
+  Serial.begin(115200);\
+  delay(100);\
+}\
+Serial.println("--------------- started ---------------");
