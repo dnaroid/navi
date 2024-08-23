@@ -46,7 +46,10 @@ static lv_obj_t* btn_zoom_in;
 static lv_obj_t* btn_zoom_out;
 static lv_obj_t* btn_gps;
 static lv_obj_t* btn_route;
+static lv_obj_t* btn_search;
 static lv_obj_t* line_route;
+static lv_obj_t* keyboard;
+static lv_obj_t* search_field;
 static Marker marker_me;
 static Marker marker_target;
 static lv_point_precise_t route_points[MAX_ROUTE_POINTS];
@@ -117,7 +120,6 @@ static void update_route() {
     int idx = 0;
     for (auto& loc : route) {
         route_points[idx++] = locToCenterOffsetPPx(loc, centerLoc, zoom);
-        LOG(route_points[idx-1].x, route_points[idx-1].y);
     }
     lv_line_set_points(line_route, route_points, idx);
 }
@@ -198,6 +200,13 @@ static void onClickZoom(lv_event_t* e) {
 static void onClickTile(lv_event_t* e) {
     lv_indev_t* indev = lv_indev_get_act();
     if (indev == nullptr) return;
+
+    if (!lv_obj_has_flag(search_field, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_add_flag(search_field, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
     lv_point_t vect;
     lv_indev_get_vect(indev, &vect);
     if (abs(vect.x) > DRAG_THRESHOLD || abs(vect.y) > DRAG_THRESHOLD) { return; }
@@ -229,6 +238,12 @@ static void onClickRoute(lv_event_t* e) {
     esp_restart();
 }
 
+static void onClickSearch(lv_event_t* e) {
+    lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(search_field, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_state(search_field, LV_STATE_FOCUSED);
+}
+
 static lv_obj_t* create_btn(const char* label, const int32_t x, const int32_t y, const lv_event_cb_t onClick, const int32_t w = 40, const int32_t h = 40) {
     lv_obj_t* btn = lv_btn_create(map_bg);
     lv_obj_set_size(btn, w, h);
@@ -252,6 +267,7 @@ static void create_route() {
     lv_obj_add_style(line_route, &style_line, 0);
     lv_obj_set_size(line_route, SCREEN_WIDTH, SCREEN_HEIGHT);
     lv_obj_align(line_route, LV_ALIGN_TOP_LEFT, 0, 0);
+
     update_route();
 }
 
@@ -308,6 +324,8 @@ static void create_buttons() {
     btn_gps = create_btn(LV_SYMBOL_GPS, x, y, onClickGps);
     y += step;
     btn_route = create_btn(LV_SYMBOL_SHUFFLE, x, y, onClickRoute);
+    y += step;
+    btn_search = create_btn(LV_SYMBOL_HOME, x, y, onClickSearch);
 
     update_buttons();
 }
@@ -334,6 +352,36 @@ static void create_markers(Location me, Location target) {
     update_markers();
 }
 
+static void create_keyboard() {
+    static const char* kb_map[] = {
+        "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n",
+        "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", LV_SYMBOL_BACKSPACE, "\n",
+        "A", "S", "D", "F", "G", "H", "J", "K", "L", LV_SYMBOL_OK, "\n",
+        "Z", "X", "C", "V", "B", "N", "M", ",", " ",
+    };
+
+    /*Set the relative width of the buttons and other controls*/
+    static const lv_buttonmatrix_ctrl_t kb_ctrl[] = {
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 8,
+    };
+
+    keyboard = lv_keyboard_create(lv_screen_active());
+    lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_USER_1, kb_map, kb_ctrl);
+    lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_USER_1);
+
+    search_field = lv_textarea_create(lv_screen_active());
+    lv_obj_add_flag(search_field, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_align(search_field, LV_ALIGN_TOP_MID, 0, 10);
+    lv_textarea_set_placeholder_text(search_field, "Search address");
+    lv_obj_set_size(search_field, SCREEN_WIDTH - 20, 40);
+
+    lv_keyboard_set_textarea(keyboard, search_field);
+}
+
 void Map_init(const BootState& state) {
     LOGI("Init Map");
     centerLoc = state.center;
@@ -345,6 +393,7 @@ void Map_init(const BootState& state) {
     create_markers(state.start, state.end);
     create_buttons();
     create_route();
+    create_keyboard();
 
     LOG(" ok");
 }
