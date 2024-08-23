@@ -16,7 +16,8 @@ struct BootState {
   Mode mode;
   Location center;
   int zoom;
-  Location target;
+  Location start;
+  Location end;
   std::vector<Location> route;
   float distance;
 };

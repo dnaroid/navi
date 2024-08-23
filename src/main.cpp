@@ -1,6 +1,7 @@
+
 #include <PathFinder.h>
 #include <SD.h>
-#include <SDCard.h>
+#include <sd_defines.h>
 #include <SPI.h>
 #include "WiFi.h"
 #include "LSM303.h"
@@ -17,21 +18,6 @@ static BootState state;
 static Mode mode = ModeMap;
 static PathFinder pf;
 auto spiSD = SPIClass(FSPI);
-
-// void drawRoute() {
-//   const auto route = pathFinder.path;
-//   if (route.empty()) { return; }
-//   Point p1 = coord::locationToScreen(route[0], centerLoc, zoom);
-//   for (size_t i = 1; i < route.size(); i++) {
-//     const Point p2 = coord::locationToScreen(route[i], centerLoc, zoom);
-//     TFT.drawLine(p1.x, p1.y, p2.x, p2.y,TFT_BLUE);
-//     TFT.drawLine(p1.x, p1.y + 1, p2.x, p2.y + 1,TFT_BLUE);
-//     TFT.drawLine(p1.x, p1.y - 1, p2.x, p2.y - 1,TFT_BLUE);
-//     TFT.drawLine(p1.x + 1, p1.y, p2.x + 1, p2.y,TFT_BLUE);
-//     TFT.drawLine(p1.x - 1, p1.y, p2.x - 1, p2.y,TFT_BLUE);
-//     p1 = p2;
-//   }
-// }
 
 // void searchAddress(const String& text) {
 //   foundAddrs.clear();
@@ -81,7 +67,7 @@ void setup() {
 
   LOGI("Init Card reader");
   spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  while (!SD.begin(SD_CS, spiSD, 80000000)) {
+  while (!SD.begin(SD_CS, spiSD, 70000000, "/sd", 10)) {
     delay(100);
     LOGI(".");
   }
@@ -98,17 +84,16 @@ void setup() {
 
   switch (mode) {
   case ModeMap:
-    // SDCard_init();
     Display_init();
     Touch_init();
-    Map_init(state.center, state.zoom, state.target, state.distance, state.route);
+    Map_init(state);
     break;
 
   case ModeRoute:
     sqlite3_initialize();
     pf.init();
-    pf.findPath(state.center, state.target);
-    writeBootState({ModeMap, state.center, state.zoom, state.target, pf.path, pf.distance});
+    pf.findPath(state.start, state.end);
+    writeBootState({ModeMap, state.center, state.zoom, state.start, state.end, pf.path, pf.distance});
     esp_restart();
     break;
 
@@ -168,10 +153,6 @@ void loop() {
 
     gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
   }
-#endif
-
-#ifndef DISABLE_UI
-  if (ui.updateAfterMs != 0 && now > ui.updateAfterMs) ui.update();
 #endif
 
 #ifndef DISABLE_SERVER

@@ -137,7 +137,7 @@ public:
             py = node.y;
         }
         nodePath.clear();
-        LOG("Found path, istance:", distance, "km");
+        LOG("Found path, distance:", distance, "km");
         return path.size();
     }
 

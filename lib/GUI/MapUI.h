@@ -1,10 +1,8 @@
 #ifndef MAP_COMPONENT_H
 #define MAP_COMPONENT_H
 
-#include <globals.h>
-#include <secrets.h>
-#include <vector>
+#include <BootDispatcher.h>
 
-void Map_init(Location center = {INIT_LON,INIT_LAT}, int initZoom = INIT_ZOOM, Location target = {0.0, 0.0}, float distance = 0.0, std::vector<Location> route = {});
+void Map_init(const BootState& state);
 
 #endif // MAP_COMPONENT_H

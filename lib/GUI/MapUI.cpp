@@ -2,6 +2,7 @@
 #include "lvgl.h"
 #include <BootDispatcher.h>
 #include <secrets.h>
+#include <TFT_eSPI.h>
 #include <vector>
 
 // #define DEBUG_TILE
@@ -15,6 +16,10 @@
 #define DRAG_THRESHOLD 10
 #define FILE_NAME_SIZE 40
 #define MARKER_SIZE 30
+#define MAX_ROUTE_POINTS 100
+#define LINE_CORRECTION_DX 0
+#define LINE_CORRECTION_DY 0
+
 
 struct Tile {
     lv_obj_t* obj;
@@ -41,8 +46,10 @@ static lv_obj_t* btn_zoom_in;
 static lv_obj_t* btn_zoom_out;
 static lv_obj_t* btn_gps;
 static lv_obj_t* btn_route;
+static lv_obj_t* line_route;
 static Marker marker_me;
 static Marker marker_target;
+static lv_point_precise_t route_points[MAX_ROUTE_POINTS];
 
 static std::vector<Tile> tiles;
 static std::vector<Marker> markers;
@@ -55,7 +62,15 @@ static lv_point_t locToPx(Location loc, int zoom) {
     int x = static_cast<int>((loc.lon + 180.0) / 360.0 * n * TILE_SIZE);
     float radLat = loc.lat * M_PI / 180.0;
     int y = static_cast<int>((1 - std::log(std::tan(radLat) + 1 / std::cos(radLat)) / M_PI) / 2 * n * TILE_SIZE);
-    return lv_point_t{x, y};
+    return {x, y};
+}
+
+static lv_point_precise_t locToPPx(Location loc, int zoom) {
+    int n = 1 << zoom;
+    lv_value_precise_t x = ((loc.lon + 180.0) / 360.0 * n * TILE_SIZE);
+    float radLat = loc.lat * M_PI / 180.0;
+    lv_value_precise_t y = ((1 - std::log(std::tan(radLat) + 1 / std::cos(radLat)) / M_PI) / 2 * n * TILE_SIZE);
+    return {x, y};
 }
 
 static lv_point_t locToCenterOffsetPx(Location loc, Location centerLoc, int zoom) {
@@ -63,6 +78,14 @@ static lv_point_t locToCenterOffsetPx(Location loc, Location centerLoc, int zoom
     lv_point_t center_px = locToPx(centerLoc, zoom);
     int screenX = loc_px.x - center_px.x;
     int screenY = loc_px.y - center_px.y;
+    return {screenX, screenY};
+}
+
+static lv_point_precise_t locToCenterOffsetPPx(Location loc, Location centerLoc, int zoom) {
+    lv_point_precise_t loc_px = locToPPx(loc, zoom);
+    lv_point_precise_t center_px = locToPPx(centerLoc, zoom);
+    lv_value_precise_t screenX = SCREEN_CENTER_X + loc_px.x - center_px.x + LINE_CORRECTION_DX;
+    lv_value_precise_t screenY = SCREEN_CENTER_Y + loc_px.y - center_px.y + LINE_CORRECTION_DX;
     return {screenX, screenY};
 }
 
@@ -87,6 +110,16 @@ static void update_markers() {
 
     marker_target.pos = locToCenterOffsetPx(marker_target.loc, centerLoc, zoom);
     lv_obj_set_pos(marker_target.obj, marker_target.pos.x, marker_target.pos.y);
+}
+
+static void update_route() {
+    if (route.empty()) { return; }
+    int idx = 0;
+    for (auto& loc : route) {
+        route_points[idx++] = locToCenterOffsetPPx(loc, centerLoc, zoom);
+        LOG(route_points[idx-1].x, route_points[idx-1].y);
+    }
+    lv_line_set_points(line_route, route_points, idx);
 }
 
 static void update_map() {
@@ -146,6 +179,7 @@ static void onDragTile(lv_event_t* e) {
 
     update_map();
     update_markers();
+    update_route();
 }
 
 static void onClickZoom(lv_event_t* e) {
@@ -158,6 +192,7 @@ static void onClickZoom(lv_event_t* e) {
     update_map();
     update_markers();
     update_buttons();
+    update_route();
 }
 
 static void onClickTile(lv_event_t* e) {
@@ -181,15 +216,16 @@ static void onClickTile(lv_event_t* e) {
 }
 
 static void onClickGps(lv_event_t* e) {
-    centerLoc = {18.620855, 54.393417};
-    zoom = 16;
+    centerLoc = marker_me.loc;
+    zoom = INIT_ZOOM;
     update_map();
     update_markers();
     update_buttons();
+    update_route();
 }
 
 static void onClickRoute(lv_event_t* e) {
-    writeBootState({ModeRoute, centerLoc, zoom, marker_target.loc});
+    writeBootState({ModeRoute, centerLoc, zoom, marker_me.loc, marker_target.loc});
     esp_restart();
 }
 
@@ -202,6 +238,21 @@ static lv_obj_t* create_btn(const char* label, const int32_t x, const int32_t y,
     lv_obj_center(zoom_in_label);
     lv_obj_add_event_cb(btn, onClick, LV_EVENT_CLICKED, NULL);
     return btn;
+}
+
+static void create_route() {
+    static lv_style_t style_line;
+    lv_style_init(&style_line);
+    lv_style_set_line_width(&style_line, 5);
+    lv_style_set_line_color(&style_line, lv_palette_main(LV_PALETTE_BLUE));
+    lv_style_set_line_opa(&style_line, 150);
+    lv_style_set_line_rounded(&style_line, true);
+
+    line_route = lv_line_create(map_bg);
+    lv_obj_add_style(line_route, &style_line, 0);
+    lv_obj_set_size(line_route, SCREEN_WIDTH, SCREEN_HEIGHT);
+    lv_obj_align(line_route, LV_ALIGN_TOP_LEFT, 0, 0);
+    update_route();
 }
 
 static void create_map() {
@@ -261,7 +312,7 @@ static void create_buttons() {
     update_buttons();
 }
 
-static void create_markers(Location target) {
+static void create_markers(Location me, Location target) {
     marker_target = {lv_label_create(map_bg), target, {0, 0}};
     lv_label_set_text(marker_target.obj, LV_SYMBOL_DOWNLOAD);
     lv_obj_set_style_text_color(marker_target.obj, lv_color_hex(0x0000FF), 0);
@@ -271,29 +322,29 @@ static void create_markers(Location target) {
     }
     markers.push_back(marker_target);
 
-    marker_me = {lv_label_create(map_bg), centerLoc, locToCenterOffsetPx(centerLoc, centerLoc, zoom)};
+    Location myLoc = me.lat != 0.0 ? me : centerLoc;
+    marker_me = {lv_label_create(map_bg), myLoc, locToCenterOffsetPx(myLoc, centerLoc, zoom)};
     lv_label_set_text(marker_me.obj, LV_SYMBOL_PLAY);
     lv_obj_set_style_transform_angle(marker_me.obj, -900, 0);
     lv_obj_set_style_text_color(marker_me.obj, lv_color_hex(0x0000FF), 0);
     lv_obj_align(marker_me.obj, LV_ALIGN_CENTER, 0, 0);
+
     markers.push_back(marker_me);
 
     update_markers();
 }
 
-void Map_init(Location center, int initZoom, Location target, float distance, std::vector<Location> route) {
+void Map_init(const BootState& state) {
     LOGI("Init Map");
-    centerLoc = center;
-    zoom = initZoom;
+    centerLoc = state.center;
+    zoom = state.zoom;
+    route = state.route;
+    distance = state.distance;
 
     create_map();
-    create_markers(target);
+    create_markers(state.start, state.end);
     create_buttons();
+    create_route();
 
     LOG(" ok");
-}
-
-void Map_setRoute(const std::vector<Location>& path, const float dist) {
-    route = path;
-    distance = dist;
 }
