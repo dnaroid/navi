@@ -24,11 +24,12 @@ std::vector<Address> foundAddrs; //todo make class
 
 int angle = 0;
 int new_angle = 0;
-float init_lat = 54.3926814;
-float init_lon = 18.6209547;
-Location centerLoc = {init_lon, init_lat};
-Location targetLoc = {0, 0};
-Location myLoc = centerLoc;
+// 54.393417/18.620855
+float init_lat = 54.393417;
+float init_lon = 18.620855;
+// Location centerLoc = {init_lon, init_lat};
+// Location targetLoc = {0, 0};
+// Location myLoc = centerLoc;
 unsigned int now;
 bool isKeyboardActive = false;
 bool isShowAddresses = false;
@@ -284,19 +285,19 @@ void setup() {
   ServerSetup();
 #endif
 
-  SDCard_init();
   Display_init();
+  SDCard_init();
   Touch_init();
 
-  Map_init(centerLoc, 18);
+  Map_init({init_lon, init_lat}, 16);
 
   LOG("---------------- Init done ----------------");
 }
 
 void loop() {
   lv_timer_handler(); /* let the GUI do its work */
-  lv_tick_inc(5); // tell LVGL how much time has passed
-  delay(5); /* let this time pass */
+  lv_tick_inc(10); // tell LVGL how much time has passed
+  delay(10); /* let this time pass */
 
   return;
   now = millis();

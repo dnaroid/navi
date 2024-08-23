@@ -65,6 +65,9 @@
 #define GSM_AUTOBAUD_MIN 9600
 #define GSM_AUTOBAUD_MAX 115200
 
+#define LV_LVGL_H_INCLUDE_SIMPLE
+
+
 // Add a reception delay, if needed.
 // This may be needed for a fast processor at a slow baud rate.
 // #define TINY_GSM_YIELD() { delay(2); }

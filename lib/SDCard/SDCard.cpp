@@ -14,7 +14,7 @@ void SDCard_init() {
     };
     sdmmc_card_t* card;
     const char mount_point[] = MOUNT_POINT;
-    printf("Initializing SD card\n");
+    LOG("Initializing SD card\n");
 
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
@@ -33,32 +33,26 @@ void SDCard_init() {
         return;
     }
 
-    // This initializes the slot without card detect (CD) and write protect (WP) signals.
-    // Modify slot_config.gpio_cd and slot_config.gpio_wp if your board has these signals.
-    // sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-
-
     sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG();
 
     slot_config.gpio_cs = PIN_NUM_CS;
     slot_config.host_id = spi_host_device_t::SPI2_HOST;
 
     printf("Mounting filesystem\n");
-    ret = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_config, &card);
 
-    if (ret != ESP_OK) {
-        if (ret == ESP_FAIL) {
-            printf("Failed to mount filesystem. "
-                "If you want the card to be formatted, set the CONFIG_EXAMPLE_FORMAT_IF_MOUNT_FAILED menuconfig option.\n");
-        } else {
-            printf("Failed to initialize the card (%s). "
-                   "Make sure SD card lines have pull-up resistors in place.\n",
-                   esp_err_to_name(ret));
+    do {
+        ret = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_config, &card);
+
+        if (ret != ESP_OK) {
+            if (ret == ESP_FAIL) {
+                LOG("Failed to mount filesystem. ");
+            } else {
+                LOG("Failed to initialize the card (%s). ", esp_err_to_name(ret));
+            }
         }
         delay(100);
-        esp_restart();
-        return;
-    }
+    } while (ret != ESP_OK);
+
     printf("Filesystem mounted\n");
 
     // Card has been initialized, print its properties
