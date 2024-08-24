@@ -1,18 +1,14 @@
-
 #include <PathFinder.h>
 #include <SD.h>
-#include <sd_defines.h>
 #include <SPI.h>
 #include "WiFi.h"
 #include "LSM303.h"
-#include "sqlite3.h"
 #include "lvgl.h"
-#include "../lv_conf.h"
 #include "MapUI.h"
 #include "Touch.h"
 #include "Display.h"
-#include "BootDispatcher.h"
-// #include "rd.h"
+#include "BootManager.h"
+#include "../lv_conf.h"
 
 static BootState state;
 static Mode mode = ModeMap;
@@ -45,7 +41,6 @@ void setup() {
 
   btStop(); // Bluetooth OFF
 
-
 #ifndef DISABLE_GPS
   gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
 #endif
@@ -61,7 +56,7 @@ void setup() {
 #endif
 
 #ifndef DISABLE_SERVER
-  // WiFi.persistent(false);
+  WiFi.persistent(false);
   ServerSetup();
 #endif
 
@@ -93,7 +88,7 @@ void setup() {
     sqlite3_initialize();
     pf.init();
     pf.findPath(state.start, state.end);
-    writeBootState({ModeMap, state.center, state.zoom, state.start, state.end, pf.path, pf.distance});
+    writeBootState({CURRENT_BM_VER, ModeMap, state.center, state.zoom, state.start, state.end, pf.path, pf.distance});
     esp_restart();
     break;
 

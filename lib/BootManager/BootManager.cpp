@@ -1,5 +1,4 @@
-#include "BootDispatcher.h"
-
+#include "BootManager.h"
 #include <iostream>
 #include <secrets.h>
 #include <vector>
@@ -10,6 +9,7 @@ const char* modeToString(const Mode mode) {
   case ModeMap: return "Map";
   case ModeRoute: return "Route";
   case ModeMirror: return "Mirror";
+  case ModeAddress: return "Address";
   default: return "Unknown";
   }
 }
@@ -35,7 +35,7 @@ void writeBootState(const BootState& state) {
     LOG("Failed to open", MODE_FILE, "for writing");
     return;
   }
-  fprintf(file, "%c,%.6f,%.6f,", state.mode, state.center.lon, state.center.lat);
+  fprintf(file, "%c,%c,%.6f,%.6f,", state.version, state.mode, state.center.lon, state.center.lat);
 
   fprintf(file, "%d,", state.zoom);
 
@@ -54,6 +54,7 @@ void writeBootState(const BootState& state) {
 
 BootState readBootState() {
   BootState state = {
+    CURRENT_BM_VER,
     ModeMap,
     {INIT_LON, INIT_LAT},
     INIT_ZOOM,
@@ -66,6 +67,20 @@ BootState readBootState() {
   if (!file) {
     LOG("Failed to open", MODE_FILE, "for reading");
     return state;
+  }
+
+  char versionChar;
+  if (fscanf(file, "%c,", &versionChar) == 1) {
+    if (versionChar != CURRENT_BM_VER) {
+      fclose(file);
+      LOGF("Incorrect version of boot state: %d", versionChar);
+      if (remove(MODE_FILE) == 0) {
+        LOG("File", MODE_FILE, "successfully deleted");
+      } else {
+        LOG("Failed to delete", MODE_FILE);
+      }
+      return state;
+    }
   }
 
   char modeChar;

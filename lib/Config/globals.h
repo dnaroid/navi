@@ -6,12 +6,6 @@
 #define INIT_ZOOM 16
 
 /// --- features disabling
-// #define DISABLE_TFT
-#define DISABLE_UI
-// #define DISABLE_TOUCH
-// #define DISABLE_SD
-// #define DISABLE_DB
-#define DISABLE_TILE_CACHE
 #define DISABLE_SERVER
 #define DISABLE_COMPASS
 #define DISABLE_GPS
@@ -111,8 +105,8 @@ void println(Args... args) {
   Serial.println();
 }
 
-
 #ifdef RELEASE
+#define START_SERIAL
 #define LOG(...)
 #define LOGI(...)
 #define LOGF(...)
@@ -120,15 +114,15 @@ void println(Args... args) {
 #define LOG(...) println(__VA_ARGS__)
 #define LOGI(...) print(__VA_ARGS__)
 #define LOGF(...) Serial.printf(__VA_ARGS__)
-#endif
-
-#define delay(ms) vTaskDelay(ms / portTICK_PERIOD_MS)
-
-#endif //GLOBALS_H
-
 #define START_SERIAL int waitCount = 0;\
 while (!Serial.available() && waitCount++ < 50) { \
   Serial.begin(115200);\
   delay(100);\
 }\
 Serial.println("--------------- started ---------------");
+#endif
+
+#define delay(ms) vTaskDelay(ms / portTICK_PERIOD_MS)
+
+#endif //GLOBALS_H
+

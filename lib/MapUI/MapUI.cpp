@@ -1,24 +1,21 @@
 #include "MapUI.h"
 #include "lvgl.h"
-#include <BootDispatcher.h>
-#include <secrets.h>
+#include <BootManager.h>
+#include <sqlite3.h>
 #include <TFT_eSPI.h>
 #include <vector>
 
 // #define DEBUG_TILE
-
 #define TILE_SIZE 256
-#define TILES_X_SCAN {0,-1,1}
-#define TILES_Y_SCAN {0,-1,1}
-#define MARKERS_TO_RENDER 1
 #define ZOOM_MIN 12
 #define ZOOM_MAX 18
 #define DRAG_THRESHOLD 10
 #define FILE_NAME_SIZE 40
 #define MARKER_SIZE 30
 #define MAX_ROUTE_POINTS 100
-#define LINE_CORRECTION_DX 0
-#define LINE_CORRECTION_DY 0
+// first tile should be central!
+#define TILES_X_SCAN {0,-1,1}
+#define TILES_Y_SCAN {0,-1,1}
 
 
 struct Tile {
@@ -87,9 +84,40 @@ static lv_point_t locToCenterOffsetPx(Location loc, Location centerLoc, int zoom
 static lv_point_precise_t locToCenterOffsetPPx(Location loc, Location centerLoc, int zoom) {
     lv_point_precise_t loc_px = locToPPx(loc, zoom);
     lv_point_precise_t center_px = locToPPx(centerLoc, zoom);
-    lv_value_precise_t screenX = SCREEN_CENTER_X + loc_px.x - center_px.x + LINE_CORRECTION_DX;
-    lv_value_precise_t screenY = SCREEN_CENTER_Y + loc_px.y - center_px.y + LINE_CORRECTION_DX;
+    lv_value_precise_t screenX = SCREEN_CENTER_X + loc_px.x - center_px.x;
+    lv_value_precise_t screenY = SCREEN_CENTER_Y + loc_px.y - center_px.y;
     return {screenX, screenY};
+}
+
+// void searchAddress(const String& text) {
+//   foundAddrs.clear();
+//   String modifiedText = text;
+//   modifiedText.replace(' ', '%');
+//   const String query = "SELECT str, num, lon, lat, details FROM addr WHERE alias LIKE '%"
+//     + modifiedText
+//     + "%' ORDER BY CAST(num AS INTEGER) ASC LIMIT "
+//     + ADDR_SEARCH_LIMIT;
+//   const char* queryCStr = query.c_str();
+//   sqlite3_exec(addrDb, queryCStr,
+//                [](void* data, int argc, char** argv, char** azColName) -> int {
+//                  const String name = String(argv[0]) + " " + String(argv[1]) + " " + String(argv[4]);
+//                  const float lon = atof(argv[2]);
+//                  const float lat = atof(argv[3]);
+//                  foundAddrs.push_back(Address{name, {lon, lat}});
+//                  return 0;
+//                }, (void*)dbData, &zErrMsg);
+//   showAddresses();
+// }
+
+static double haversineDistance(Location loc1, Location loc2) {
+    const double R = 6371;
+    double dLat = radians(loc2.lat - loc1.lat);
+    double dLon = radians(loc2.lon - loc1.lon);
+    double a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(radians(loc1.lat)) * cos(radians(loc2.lat)) *
+        sin(dLon / 2) * sin(dLon / 2);
+    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return R * c;
 }
 
 static Location pxToLoc(lv_point_t pixels, int zoom) {
@@ -234,7 +262,14 @@ static void onClickGps(lv_event_t* e) {
 }
 
 static void onClickRoute(lv_event_t* e) {
-    writeBootState({ModeRoute, centerLoc, zoom, marker_me.loc, marker_target.loc});
+    lv_obj_t* label1 = lv_label_create(lv_screen_active());
+    lv_label_set_text(label1, "Calculating route.\nPlease wait...");
+    lv_obj_set_style_text_align(label1, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_bg_color(label1, lv_color_hex(0x00FF00), 0);
+    lv_obj_set_style_bg_opa(label1, LV_OPA_COVER, 0);
+    lv_obj_align(label1, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_text_color(label1, lv_color_hex(0x000000), 0);
+    writeBootState({CURRENT_BM_VER, ModeRoute, centerLoc, zoom, marker_me.loc, marker_target.loc});
     esp_restart();
 }
 
@@ -355,17 +390,18 @@ static void create_markers(Location me, Location target) {
 static void create_keyboard() {
     static const char* kb_map[] = {
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n",
-        "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", LV_SYMBOL_BACKSPACE, "\n",
-        "A", "S", "D", "F", "G", "H", "J", "K", "L", LV_SYMBOL_OK, "\n",
-        "Z", "X", "C", "V", "B", "N", "M", ",", " ",
+        "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "\n",
+        "A", "S", "D", "F", "G", "H", "J", "K", "L", LV_SYMBOL_BACKSPACE, "\n",
+        "Z", "X", "C", "V", " ", "B", "N", "M", LV_SYMBOL_OK,
     };
 
     /*Set the relative width of the buttons and other controls*/
     static const lv_buttonmatrix_ctrl_t kb_ctrl[] = {
+        // 2  3  4  5  6  7  8  9  10
         4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 8,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        4, 4, 4, 4, 8, 4, 4, 4, 4
     };
 
     keyboard = lv_keyboard_create(lv_screen_active());
