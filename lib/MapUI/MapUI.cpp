@@ -38,6 +38,15 @@ struct Marker {
 static Location centerLoc;
 static int zoom = 0;
 
+char* zErrMsg = 0;
+int rc;
+const char* dbData = "Callback function called";
+
+sqlite3* addrDb;
+Address address;
+std::vector<Address> foundAddrs; //todo make class
+
+
 static lv_obj_t* map_bg;
 static lv_obj_t* btn_zoom_in;
 static lv_obj_t* btn_zoom_out;
@@ -89,25 +98,25 @@ static lv_point_precise_t locToCenterOffsetPPx(Location loc, Location centerLoc,
     return {screenX, screenY};
 }
 
-// void searchAddress(const String& text) {
-//   foundAddrs.clear();
-//   String modifiedText = text;
-//   modifiedText.replace(' ', '%');
-//   const String query = "SELECT str, num, lon, lat, details FROM addr WHERE alias LIKE '%"
-//     + modifiedText
-//     + "%' ORDER BY CAST(num AS INTEGER) ASC LIMIT "
-//     + ADDR_SEARCH_LIMIT;
-//   const char* queryCStr = query.c_str();
-//   sqlite3_exec(addrDb, queryCStr,
-//                [](void* data, int argc, char** argv, char** azColName) -> int {
-//                  const String name = String(argv[0]) + " " + String(argv[1]) + " " + String(argv[4]);
-//                  const float lon = atof(argv[2]);
-//                  const float lat = atof(argv[3]);
-//                  foundAddrs.push_back(Address{name, {lon, lat}});
-//                  return 0;
-//                }, (void*)dbData, &zErrMsg);
-//   showAddresses();
-// }
+void searchAddress(const String& text) {
+    foundAddrs.clear();
+    String modifiedText = text;
+    modifiedText.replace(' ', '%');
+    const String query = "SELECT str, num, lon, lat, details FROM addr WHERE alias LIKE '%"
+        + modifiedText
+        + "%' ORDER BY CAST(num AS INTEGER) ASC LIMIT "
+        + ADDR_SEARCH_LIMIT;
+    const char* queryCStr = query.c_str();
+    sqlite3_exec(addrDb, queryCStr,
+                 [](void* data, int argc, char** argv, char** azColName) -> int {
+                     const String name = String(argv[0]) + " " + String(argv[1]) + " " + String(argv[4]);
+                     const float lon = atof(argv[2]);
+                     const float lat = atof(argv[3]);
+                     foundAddrs.push_back(Address{name, {lon, lat}});
+                     return 0;
+                 }, (void*)dbData, &zErrMsg);
+    // showAddresses();
+}
 
 static double haversineDistance(Location loc1, Location loc2) {
     const double R = 6371;
@@ -133,6 +142,17 @@ static Location pointToLocation(lv_point_t point, Location cursorLoc, int zoom) 
     int pixelX = point.x + centerPixels.x - SCREEN_CENTER_X;
     int pixelY = point.y + centerPixels.y - SCREEN_CENTER_Y;
     return pxToLoc({pixelX, pixelY}, zoom);
+}
+
+static void toggleSearchDialog(const bool visible) {
+    if (visible) {
+        lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(search_field, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_state(search_field, LV_STATE_FOCUSED);
+    } else {
+        lv_obj_add_flag(search_field, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void update_markers() {
@@ -230,8 +250,7 @@ static void onClickTile(lv_event_t* e) {
     if (indev == nullptr) return;
 
     if (!lv_obj_has_flag(search_field, LV_OBJ_FLAG_HIDDEN)) {
-        lv_obj_add_flag(search_field, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+        toggleSearchDialog(false);
         return;
     }
 
@@ -274,9 +293,13 @@ static void onClickRoute(lv_event_t* e) {
 }
 
 static void onClickSearch(lv_event_t* e) {
-    lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(search_field, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_state(search_field, LV_STATE_FOCUSED);
+    toggleSearchDialog(true);
+}
+
+static void onSearchStart(lv_event_t* e) {
+    toggleSearchDialog(false);
+    searchAddress(lv_textarea_get_text(search_field));
+    LOG(foundAddrs.size());
 }
 
 static lv_obj_t* create_btn(const char* label, const int32_t x, const int32_t y, const lv_event_cb_t onClick, const int32_t w = 40, const int32_t h = 40) {
@@ -392,34 +415,37 @@ static void create_keyboard() {
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n",
         "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "\n",
         "A", "S", "D", "F", "G", "H", "J", "K", "L", LV_SYMBOL_BACKSPACE, "\n",
-        "Z", "X", "C", "V", " ", "B", "N", "M", LV_SYMBOL_OK,
+        "Z", "X", "C", "V", " ", "B", "N", "M", LV_SYMBOL_OK
     };
 
     /*Set the relative width of the buttons and other controls*/
     static const lv_buttonmatrix_ctrl_t kb_ctrl[] = {
-        // 2  3  4  5  6  7  8  9  10
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 4, 4, 4, 8, 4, 4, 4, 4
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 2, 1, 1, 1, 1
     };
 
     keyboard = lv_keyboard_create(lv_screen_active());
-    lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
     lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_USER_1, kb_map, kb_ctrl);
     lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_USER_1);
 
     search_field = lv_textarea_create(lv_screen_active());
-    lv_obj_add_flag(search_field, LV_OBJ_FLAG_HIDDEN);
     lv_obj_align(search_field, LV_ALIGN_TOP_MID, 0, 10);
     lv_textarea_set_placeholder_text(search_field, "Search address");
     lv_obj_set_size(search_field, SCREEN_WIDTH - 20, 40);
+    lv_obj_add_event_cb(search_field, onSearchStart, LV_EVENT_READY, NULL);
 
     lv_keyboard_set_textarea(keyboard, search_field);
+    toggleSearchDialog(false);
 }
 
 void Map_init(const BootState& state) {
     LOGI("Init Map");
+
+    sqlite3_initialize();
+    sqlite3_open("/sd/addr.db", &addrDb);
+
     centerLoc = state.center;
     zoom = state.zoom;
     route = state.route;
