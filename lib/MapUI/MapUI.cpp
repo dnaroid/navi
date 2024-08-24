@@ -45,7 +45,7 @@ const char* dbData = "Callback function called";
 sqlite3* addrDb;
 Address address;
 std::vector<Address> foundAddrs; //todo make class
-
+bool searching = false;
 
 static lv_obj_t* map_bg;
 static lv_obj_t* btn_zoom_in;
@@ -230,6 +230,7 @@ static void onDragTile(lv_event_t* e) {
     update_map();
     update_markers();
     update_route();
+    update_buttons();
 }
 
 static void onClickZoom(lv_event_t* e) {
@@ -241,8 +242,8 @@ static void onClickZoom(lv_event_t* e) {
     zoom = new_zoom;
     update_map();
     update_markers();
-    update_buttons();
     update_route();
+    update_buttons();
 }
 
 static void onClickTile(lv_event_t* e) {
@@ -276,8 +277,8 @@ static void onClickGps(lv_event_t* e) {
     zoom = INIT_ZOOM;
     update_map();
     update_markers();
-    update_buttons();
     update_route();
+    update_buttons();
 }
 
 static void onClickRoute(lv_event_t* e) {
@@ -296,14 +297,20 @@ static void onClickSearch(lv_event_t* e) {
     toggleSearchDialog(true);
 }
 
-static void onSearchStart(lv_event_t* e) {
-    toggleSearchDialog(false);
-    searchAddress(lv_textarea_get_text(search_field));
-    LOG(foundAddrs.size());
+static void ta_event_cb(lv_event_t* e) {
+    LOG("ok");
+    // lv_event_code_t code = lv_event_get_code(e);
+    // lv_obj_t* ta = (lv_obj_t*)lv_event_get_target(e);
+    // lv_obj_t* kb = (lv_obj_t*)lv_event_get_user_data(e);
+    // if (code == LV_EVENT_READY || code == LV_EVENT_CANCEL) {
+    //     // lv_obj_set_height(tv, LV_VER_RES);
+    //     lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+    // lv_indev_reset(NULL, ta); /*To forget the last clicked object to make it focusable again*/
+    // }
 }
 
 static lv_obj_t* create_btn(const char* label, const int32_t x, const int32_t y, const lv_event_cb_t onClick, const int32_t w = 40, const int32_t h = 40) {
-    lv_obj_t* btn = lv_btn_create(map_bg);
+    lv_obj_t* btn = lv_btn_create(lv_scr_act());
     lv_obj_set_size(btn, w, h);
     lv_obj_align(btn, LV_ALIGN_TOP_LEFT, x, y);
     lv_obj_t* zoom_in_label = lv_label_create(btn);
@@ -327,6 +334,7 @@ static void create_route() {
     lv_obj_align(line_route, LV_ALIGN_TOP_LEFT, 0, 0);
 
     update_route();
+    update_buttons();
 }
 
 static void create_map() {
@@ -374,7 +382,7 @@ static void create_map() {
 }
 
 static void create_buttons() {
-    int x = 2, y = 10, step = 50;
+    int x = 10, y = 10, step = 50;
     btn_zoom_in = create_btn(LV_SYMBOL_PLUS, x, y, onClickZoom);
     y += step;
     btn_zoom_out = create_btn(LV_SYMBOL_MINUS, x, y, onClickZoom);
@@ -410,12 +418,65 @@ static void create_markers(Location me, Location target) {
     update_markers();
 }
 
+static void keyboard_event_handler(lv_event_t* e) {
+    lv_obj_t* obj = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+
+    lv_keyboard_t* keyboard = (lv_keyboard_t*)obj;
+    uint32_t btn_id = lv_buttonmatrix_get_selected_button(obj);
+    if (btn_id == LV_BUTTONMATRIX_BUTTON_NONE) return;
+
+    const char* txt = lv_buttonmatrix_get_button_text(obj, btn_id);
+    if (txt == NULL) return;
+
+    if (lv_strcmp(txt, LV_SYMBOL_OK) == 0) {
+        // Здесь обрабатываем нажатие кнопки OK
+        // const char* searchText = lv_textarea_get_text(search_field);
+        // LOG("Searching for:", searchText);
+        LOG("Searching ");
+
+        // Запускаем задачу поиска
+        // Например, вы можете установить флаг или запустить задачу, как было описано ранее.
+    }
+}
+
+
+static void create_keyboard2() {
+    static const char* kb_map[] = {
+        "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n",
+        "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", LV_SYMBOL_BACKSPACE, "\n",
+        "A", "S", "D", "F", "G", "H", "J", "K", "L", LV_SYMBOL_OK, "\n",
+        "Z", "X", "C", "V", "B", "N", "M", ",", " ",
+    };
+
+    /*Set the relative width of the buttons and other controls*/
+    static const lv_buttonmatrix_ctrl_t kb_ctrl[] = {
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 8,
+    };
+
+    keyboard = lv_keyboard_create(lv_screen_active());
+    // lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_USER_1, kb_map, kb_ctrl);
+    lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_USER_1);
+
+    search_field = lv_textarea_create(lv_screen_active());
+    // lv_obj_add_flag(search_field, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_align(search_field, LV_ALIGN_TOP_MID, 0, 10);
+    lv_textarea_set_placeholder_text(search_field, "Search address");
+    lv_obj_set_size(search_field, SCREEN_WIDTH - 20, 40);
+
+    // lv_keyboard_set_textarea(keyboard, search_field);
+}
+
+
 static void create_keyboard() {
     static const char* kb_map[] = {
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n",
         "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "\n",
         "A", "S", "D", "F", "G", "H", "J", "K", "L", LV_SYMBOL_BACKSPACE, "\n",
-        "Z", "X", "C", "V", " ", "B", "N", "M", LV_SYMBOL_OK
+        "Z", "X", "C", "V", " ", "B", "N", "M", LV_SYMBOL_NEW_LINE
     };
 
     static const lv_buttonmatrix_ctrl_t kb_ctrl[] = {
@@ -425,17 +486,18 @@ static void create_keyboard() {
         1, 1, 1, 1, 2, 1, 1, 1, 1
     };
 
-    keyboard = lv_keyboard_create(lv_screen_active());
+    keyboard = lv_keyboard_create(lv_scr_act());
     lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_USER_1, kb_map, kb_ctrl);
     lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_USER_1);
-    lv_obj_add_event_cb(keyboard, onSearchStart, LV_EVENT_READY, NULL);
 
-    search_field = lv_textarea_create(lv_screen_active());
+    search_field = lv_textarea_create(lv_scr_act());
     lv_obj_align(search_field, LV_ALIGN_TOP_MID, 0, 10);
     lv_textarea_set_placeholder_text(search_field, "Search address");
     lv_obj_set_size(search_field, SCREEN_WIDTH - 20, 40);
 
     lv_keyboard_set_textarea(keyboard, search_field);
+    // lv_obj_add_event_cb(search_field, ta_event_cb, LV_EVENT_ALL, keyboard);
+    lv_obj_add_event_cb(search_field, ta_event_cb, LV_EVENT_READY, keyboard);
     toggleSearchDialog(false);
 }
 
@@ -457,4 +519,14 @@ void Map_init(const BootState& state) {
     create_keyboard();
 
     LOG(" ok");
+}
+
+void Map_loop() {
+    if (searching) {
+        searching = false;
+        searchAddress(lv_textarea_get_text(search_field)); //todo to core2
+    }
+    lv_timer_handler();
+    lv_tick_inc(10);
+    delay(10);
 }

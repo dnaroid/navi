@@ -101,9 +101,7 @@ void setup() {
 
 void loop() {
   if (mode == ModeMap) {
-    lv_timer_handler();
-    lv_tick_inc(10);
-    delay(10);
+    Map_loop();
   } else if (mode == ModeRoute) {
   } else if (mode == ModeMirror) {
   }
