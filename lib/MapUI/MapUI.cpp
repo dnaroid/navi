@@ -418,7 +418,6 @@ static void create_keyboard() {
         "Z", "X", "C", "V", " ", "B", "N", "M", LV_SYMBOL_OK
     };
 
-    /*Set the relative width of the buttons and other controls*/
     static const lv_buttonmatrix_ctrl_t kb_ctrl[] = {
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -429,12 +428,12 @@ static void create_keyboard() {
     keyboard = lv_keyboard_create(lv_screen_active());
     lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_USER_1, kb_map, kb_ctrl);
     lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_USER_1);
+    lv_obj_add_event_cb(keyboard, onSearchStart, LV_EVENT_READY, NULL);
 
     search_field = lv_textarea_create(lv_screen_active());
     lv_obj_align(search_field, LV_ALIGN_TOP_MID, 0, 10);
     lv_textarea_set_placeholder_text(search_field, "Search address");
     lv_obj_set_size(search_field, SCREEN_WIDTH - 20, 40);
-    lv_obj_add_event_cb(search_field, onSearchStart, LV_EVENT_READY, NULL);
 
     lv_keyboard_set_textarea(keyboard, search_field);
     toggleSearchDialog(false);
