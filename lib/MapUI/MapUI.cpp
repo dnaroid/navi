@@ -440,7 +440,7 @@ static void keyboard_event_handler(lv_event_t* e) {
 }
 
 
-static void create_keyboard2() {
+static void create_keyboard() {
     static const char* kb_map[] = {
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n",
         "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", LV_SYMBOL_BACKSPACE, "\n",
@@ -467,11 +467,11 @@ static void create_keyboard2() {
     lv_textarea_set_placeholder_text(search_field, "Search address");
     lv_obj_set_size(search_field, SCREEN_WIDTH - 20, 40);
 
-    // lv_keyboard_set_textarea(keyboard, search_field);
+    lv_keyboard_set_textarea(keyboard, search_field);
 }
 
 
-static void create_keyboard() {
+static void create_keyboard2() {
     static const char* kb_map[] = {
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n",
         "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "\n",
