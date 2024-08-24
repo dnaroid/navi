@@ -19,6 +19,13 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define TILES_Y_SCAN {0,-1,1}
 #define PRIMARY_COLOR lv_color_hex(0x2196F3)
 #define TOAST_COLOR lv_color_hex(0xFF5722)
+#define SCREEN_CENTER_X (SCREEN_WIDTH/2)
+#define SCREEN_CENTER_Y (SCREEN_HEIGHT/2)
+
+struct UICommand {
+    const char* command;
+    const char* data;
+};
 
 struct Address {
     String name;
@@ -50,7 +57,8 @@ static auto dbData = "Callback function called";
 
 sqlite3* addrDb;
 Address address;
-std::vector<Address> foundAddrs; //todo make class
+std::vector<Address> foundAddrs;
+QueueHandle_t uiQueue;
 
 static lv_obj_t* map_bg;
 static lv_obj_t* btn_zoom_in;
@@ -162,23 +170,8 @@ static void hideToast() {
 
 static void onClickAddrList(lv_event_t* lv_event);
 
-static void searchAddress(const String& text) {
-    foundAddrs.clear();
-    String modifiedText = text;
-    modifiedText.replace(' ', '%');
-    const String query = "SELECT str, num, lon, lat, details FROM addr WHERE alias LIKE '%"
-        + modifiedText
-        + "%' ORDER BY CAST(num AS INTEGER) ASC LIMIT "
-        + ADDR_SEARCH_LIMIT;
-    const char* queryCStr = query.c_str();
-    sqlite3_exec(addrDb, queryCStr,
-                 [](void* data, int argc, char** argv, char** azColName) -> int {
-                     const String name = String(argv[0]) + " " + String(argv[1]) + "\n" + String(argv[4]);
-                     const float lon = atof(argv[2]);
-                     const float lat = atof(argv[3]);
-                     foundAddrs.push_back(Address{name, {lon, lat}});
-                     return 0;
-                 }, (void*)dbData, &zErrMsg);
+static void onSearchTaskDone() {
+    hideToast();
     lv_obj_clean(addrs_list);
     for (auto addr : foundAddrs) {
         lv_list_add_text(addrs_list, addr.name.c_str());
@@ -186,6 +179,56 @@ static void searchAddress(const String& text) {
         lv_obj_add_event_cb(btn, onClickAddrList, LV_EVENT_CLICKED, NULL);
     }
     showAddrList(true);
+}
+
+
+void uiTask(void* pvParameters) {
+    UICommand cmd;
+    while (true) {
+        if (xQueueReceive(uiQueue, &cmd, portMAX_DELAY) == pdPASS) {
+            LOG("uiTask -", cmd.command);
+            if (strcmp(cmd.command, "onSearchTaskDone") == 0) {
+                onSearchTaskDone();
+            }
+        }
+        lv_task_handler();
+        delay(100);
+    }
+}
+
+static void searchAddress(const String& text) {
+    foundAddrs.clear();
+    String modifiedText = text;
+    modifiedText.replace(' ', '%');
+    const String query = "SELECT str, num, lon, lat FROM addr WHERE alias LIKE '%"
+        + modifiedText
+        + "%' ORDER BY CAST(num AS INTEGER) ASC LIMIT "
+        + ADDR_SEARCH_LIMIT;
+    const char* queryCStr = query.c_str();
+    sqlite3_exec(addrDb, queryCStr,
+                 [](void* data, int argc, char** argv, char** azColName) -> int {
+                     const String name = String(argv[0]) + " " + String(argv[1]);
+                     const float lon = atof(argv[2]);
+                     const float lat = atof(argv[3]);
+                     foundAddrs.push_back(Address{name, {lon, lat}});
+                     return 0;
+                 }, (void*)dbData, &zErrMsg);
+}
+
+static void searchTask(void* pvParameters) {
+    const char* searchText = (const char*)pvParameters;
+    LOG("searchTask - Searching for", searchText);
+    searchAddress(searchText);
+    LOG("searchTask - Done");
+    UICommand cmd = {"onSearchTaskDone", NULL};
+    xQueueSend(uiQueue, &cmd, portMAX_DELAY);
+    vTaskDelete(NULL);
+}
+
+static void rebootTask(void* pvParameters) {
+    writeBootState({CURRENT_BM_VER, ModeRoute, centerLoc, zoom, marker_me.loc, marker_target.loc});
+    delay(100);
+    esp_restart();
 }
 
 static void update_markers() {
@@ -335,8 +378,7 @@ static void onClickGps(lv_event_t* e) {
 
 static void onClickRoute(lv_event_t* e) {
     showToast("Calculating route.\nPlease wait...");
-    writeBootState({CURRENT_BM_VER, ModeRoute, centerLoc, zoom, marker_me.loc, marker_target.loc});
-    esp_restart();
+    xTaskCreatePinnedToCore(rebootTask, "rebootTask", 4096, NULL, 1, NULL, 1);
 }
 
 static void onClickSearch(lv_event_t* e) {
@@ -346,10 +388,9 @@ static void onClickSearch(lv_event_t* e) {
 static void onStartSearch(lv_event_t* e) {
     const char* text = lv_textarea_get_text(search_field);
     if (strlen(text) == 0) return;
-    showToast("Searching addresses.\nPlease wait...");
-    searchAddress(text);
+    showToast("Searching addresses...");
     showSearchDialog(false);
-    hideToast();
+    xTaskCreatePinnedToCore(searchTask, "SearchTask", 8192, (void*)text, 1, NULL, 1);
 }
 
 static lv_obj_t* create_btn(const char* label, const int32_t x, const int32_t y, const lv_event_cb_t onClick, const int32_t w = 40, const int32_t h = 40) {
@@ -465,7 +506,7 @@ static void create_toast() {
     lv_obj_set_style_bg_color(toast, TOAST_COLOR, 0);
     lv_obj_set_style_bg_opa(toast, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(toast, 20, 0);
-    lv_obj_align(toast, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(toast, LV_ALIGN_TOP_MID, 0, 10);
     lv_obj_set_style_text_color(toast, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_radius(toast, 6, 0);
 
@@ -531,6 +572,9 @@ void Map_init(const BootState& state) {
     create_keyboard();
     create_toast();
     create_list();
+
+    uiQueue = xQueueCreate(10, sizeof(UICommand));
+    xTaskCreatePinnedToCore(uiTask, "UITask", 4096, NULL, 1, NULL, 0);
 
     LOG(" ok");
 }
