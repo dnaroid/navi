@@ -15,26 +15,6 @@ static Mode mode = ModeMap;
 static PathFinder pf;
 auto spiSD = SPIClass(FSPI);
 
-// void searchAddress(const String& text) {
-//   foundAddrs.clear();
-//   String modifiedText = text;
-//   modifiedText.replace(' ', '%');
-//   const String query = "SELECT str, num, lon, lat, details FROM addr WHERE alias LIKE '%"
-//     + modifiedText
-//     + "%' ORDER BY CAST(num AS INTEGER) ASC LIMIT "
-//     + ADDR_SEARCH_LIMIT;
-//   const char* queryCStr = query.c_str();
-//   sqlite3_exec(addrDb, queryCStr,
-//                [](void* data, int argc, char** argv, char** azColName) -> int {
-//                  const String name = String(argv[0]) + " " + String(argv[1]) + " " + String(argv[4]);
-//                  const float lon = atof(argv[2]);
-//                  const float lat = atof(argv[3]);
-//                  foundAddrs.push_back(Address{name, {lon, lat}});
-//                  return 0;
-//                }, (void*)dbData, &zErrMsg);
-//   showAddresses();
-// }
-
 
 void setup() {
   START_SERIAL
@@ -101,7 +81,9 @@ void setup() {
 
 void loop() {
   if (mode == ModeMap) {
-    Map_loop();
+    lv_timer_handler();
+    lv_tick_inc(10);
+    delay(10);
   } else if (mode == ModeRoute) {
   } else if (mode == ModeMirror) {
   }

@@ -1,5 +1,5 @@
-#ifndef REBOOTDISPATCHER_H
-#define REBOOTDISPATCHER_H
+#ifndef BOOTMANAGER_H
+#define BOOTMANAGER_H
 
 #define MODE_FILE "/sd/boot.cfg"
 
@@ -12,7 +12,6 @@ enum Mode {
   ModeMap = 'm',
   ModeRoute = 'r',
   ModeMirror = 'b',
-  ModeAddress = 'a'
 };
 
 struct BootState {
@@ -29,4 +28,4 @@ struct BootState {
 void writeBootState(const BootState& state);
 BootState readBootState();
 
-#endif //REBOOTDISPATCHER_H
+#endif //BOOTMANAGER_H

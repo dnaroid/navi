@@ -3,7 +3,7 @@
 
 #include "Arduino.h"
 
-#define INIT_ZOOM 16
+#define INIT_ZOOM 14
 
 /// --- features disabling
 #define DISABLE_SERVER
@@ -82,12 +82,6 @@ struct Point {
   int x;
   int y;
 };
-
-struct Address {
-  String name;
-  Location location;
-};
-
 
 inline void print() {
 }

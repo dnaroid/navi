@@ -9,7 +9,6 @@ const char* modeToString(const Mode mode) {
   case ModeMap: return "Map";
   case ModeRoute: return "Route";
   case ModeMirror: return "Mirror";
-  case ModeAddress: return "Address";
   default: return "Unknown";
   }
 }
