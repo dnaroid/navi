@@ -1397,7 +1397,7 @@ static const lv_font_fmt_txt_kern_classes_t kern_classes = {
 #if LVGL_VERSION_MAJOR >= 8
 /*Store all the custom data of the font*/
 
-static const lv_font_fmt_txt_dsc_t font_dsc = {
+static const lv_font_fmt_txt_dsc_t font_dsc2 = {
 #else
 static lv_font_fmt_txt_dsc_t font_dsc = {
 #endif
@@ -1434,7 +1434,7 @@ lv_font_t lv_font_montserrat_8 = {
     .underline_position = -1,
     .underline_thickness = 0,
 #endif
-    .dsc = &font_dsc           /*The custom font data. Will be accessed by `get_glyph_bitmap/dsc` */
+    .dsc = &font_dsc2           /*The custom font data. Will be accessed by `get_glyph_bitmap/dsc` */
 };
 
 #endif /*#if LV_FONT_MONTSERRAT_8*/
