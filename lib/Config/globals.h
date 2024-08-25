@@ -3,7 +3,7 @@
 
 #include "Arduino.h"
 
-#define INIT_ZOOM 14
+#define INIT_ZOOM 16
 
 /// --- features disabling
 #define DISABLE_SERVER
