@@ -1,6 +1,7 @@
 #include <PathFinder.h>
 #include <SD.h>
 #include <SPI.h>
+#include <Wire.h>
 #include "WiFi.h"
 #include "LSM303.h"
 #include "lvgl.h"
@@ -14,7 +15,19 @@ static BootState state;
 static Mode mode = ModeMap;
 static PathFinder pf;
 auto spiSD = SPIClass(FSPI);
+LSM303 compass;
 
+float compass_angle;
+
+void updateCompassAndGPS(void* pvParameters) {
+  while (true) {
+#ifndef DISABLE_COMPASS
+    compass.read();
+    compass_angle = compass.heading();
+  }
+#endif
+  delay(COMPASS_UPD_PERIOD);
+}
 
 void setup() {
   START_SERIAL
@@ -23,16 +36,6 @@ void setup() {
 
 #ifndef DISABLE_GPS
   gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
-#endif
-
-#ifndef DISABLE_COMPASS
-  LOGI("Init Compass");
-  compass.init();
-  compass.enableDefault();
-  compass.m_min = (LSM303::vector<int16_t>){-686, -545, -4};
-  compass.m_max = (LSM303::vector<int16_t>){+331, +353, +4};
-  LOG(" ok");
-  compassUpdateAfterMs = now + COMPASS_UPDATE_PERIOD;
 #endif
 
 #ifndef DISABLE_SERVER
@@ -59,9 +62,25 @@ void setup() {
 
   switch (mode) {
   case ModeMap:
+    Wire.begin(I2C_SDA, I2C_SCL, 0);
+    delay(100);
+
     Display_init();
+
     Touch_init();
+
+#ifndef DISABLE_COMPASS
+    LOGI("Init Compass");
+    compass.init();
+    compass.enableDefault();
+    compass.m_min = (LSM303::vector<int16_t>){-686, -545, -4};
+    compass.m_max = (LSM303::vector<int16_t>){+331, +353, +4};
+    LOG(" ok");
+#endif
+
     Map_init(state);
+
+    xTaskCreatePinnedToCore(updateCompassAndGPS, "UpdateTask", 4096, NULL, 1, NULL, 1);
     break;
 
   case ModeRoute:
@@ -90,18 +109,6 @@ void loop() {
 
   return;
 
-
-#ifndef DISABLE_COMPASS
-  if (now > compassUpdateAfterMs) {
-    compass.read();
-    new_angle = compass.heading();
-    if (abs(new_angle - angle) > COMPASS_ANGLE_STEP) {
-      angle = new_angle;
-      drawMyMarker();
-    }
-    compassUpdateAfterMs = now + COMPASS_UPDATE_PERIOD;
-  }
-#endif
 
 #ifndef DISABLE_GPS
   bool gps = false;

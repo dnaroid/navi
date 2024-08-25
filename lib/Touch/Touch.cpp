@@ -21,7 +21,7 @@ static void my_touchpad_read(lv_indev_t* indev, lv_indev_data_t* data) {
 
 void Touch_init() {
   LOGI("Init Touch ");
-  Wire.begin(I2C_SDA, I2C_SCL, 0);
+  // Wire.begin(I2C_SDA, I2C_SCL, 0);
   delay(100);
   if (!initTouch()) {
     LOG("fail");

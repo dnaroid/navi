@@ -3,11 +3,14 @@
 
 #include "Arduino.h"
 
+extern float compass_angle;
+#define COMPASS_UPD_PERIOD 100
+
 #define INIT_ZOOM 16
 
 /// --- features disabling
 #define DISABLE_SERVER
-#define DISABLE_COMPASS
+// #define DISABLE_COMPASS
 #define DISABLE_GPS
 
 #define TINY_GSM_MODEM_SIM800
