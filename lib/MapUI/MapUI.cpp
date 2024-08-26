@@ -5,17 +5,29 @@
 #include <sqlite3.h>
 #include <vector>
 #include "montserrat_14_pl.c"
-#include "icons.c"
+#include "marker.c"
+#include "compass.c"
+
+#define DEBUG_MAP 0
+#if DEBUG_MAP == 1
+#define DEBUG_VALUES
+static int DEBUG_VALUE_1 = 0;
+static int DEBUG_VALUE_2 = 0;
+#endif
 
 LV_FONT_DECLARE(montserrat_14_pl)
-LV_FONT_DECLARE(icons)
+LV_IMG_DECLARE(marker)
+LV_IMG_DECLARE(compass)
 
 #define ICON_LOCATION "\xEE\xA5\x87"
 #define ICON_COMPASS  "\xEE\xA8\xB2"
-// #define DEBUG_TILE
 #define DRAG_THRESHOLD 10
 #define FILE_NAME_SIZE 40
 #define MARKERS_OPACITY 180
+#define MARKER_TARGET_OX (0)
+#define MARKER_TARGET_OY (-25)
+#define MARKER_ME_OX (0)
+#define MARKER_ME_OY (0)
 // first tile should be central!
 #define TILES_X_SCAN {0,-1,1}
 #define TILES_Y_SCAN {0,-1,1}
@@ -61,7 +73,6 @@ static auto dbData = "Callback function called";
 static sqlite3* addrDb;
 static std::vector<Address> foundAddrs;
 
-static lv_obj_t* map_bg;
 static lv_obj_t* btn_zoom_in;
 static lv_obj_t* btn_zoom_out;
 static lv_obj_t* btn_gps;
@@ -73,7 +84,6 @@ static lv_obj_t* search_field;
 static lv_obj_t* toast;
 static lv_obj_t* lst_addrs;
 static lv_obj_t* lbl_dist;
-static lv_obj_t* compass;
 static Marker marker_me;
 static Marker marker_target;
 static lv_point_precise_t* route_px;
@@ -207,11 +217,11 @@ static void searchAddress() {
 static void updateMarkers(bool onlyMe = false) {
     if (marker_me.obj != nullptr) {
         marker_me.pos = locToCenterOffsetPx(marker_me.loc, centerLoc, zoom);
-        lv_obj_set_pos(marker_me.obj, marker_me.pos.x, marker_me.pos.y);
+        lv_obj_set_pos(marker_me.obj, marker_me.pos.x + MARKER_ME_OX, marker_me.pos.y + MARKER_ME_OY);
     }
     if (!onlyMe && marker_target.obj != nullptr && !lv_obj_has_flag(marker_target.obj, LV_OBJ_FLAG_HIDDEN)) {
         marker_target.pos = locToCenterOffsetPx(marker_target.loc, centerLoc, zoom);
-        lv_obj_set_pos(marker_target.obj, marker_target.pos.x, marker_target.pos.y);
+        lv_obj_set_pos(marker_target.obj, marker_target.pos.x + MARKER_TARGET_OX, marker_target.pos.y + MARKER_TARGET_OY);
     }
 }
 
@@ -285,14 +295,9 @@ static void onDragTile(lv_event_t* e) {
     updateButtons();
 }
 
-int angle = 0;
-float min_angle = std::numeric_limits<float>::max();
-float max_angle = std::numeric_limits<float>::lowest();
-
 static void onCompassTimer(lv_timer_t* timer) {
-    // int a = ((int)compass_angle + 0) % 360;
     auto angle_fixed = -(int16_t)(((int)compass_angle - 90) % 360 * 10);
-    lv_obj_set_style_transform_angle(compass, angle_fixed, 0);
+    lv_image_set_rotation(marker_me.obj, angle_fixed);
     updateMarkers(true);
 }
 
@@ -407,19 +412,16 @@ static void createRoute() {
     lv_style_set_line_opa(&style_line, 150);
     lv_style_set_line_rounded(&style_line, true);
 
-    line_route = lv_line_create(map_bg);
+    line_route = lv_line_create(lv_scr_act());
     lv_obj_add_style(line_route, &style_line, 0);
     lv_obj_set_size(line_route, SCREEN_WIDTH, SCREEN_HEIGHT);
     lv_obj_align(line_route, LV_ALIGN_TOP_LEFT, 0, 0);
 }
 
 static void createMap() {
-    map_bg = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(map_bg, lv_pct(100), lv_pct(100));
-    lv_obj_align(map_bg, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_size(lv_scr_act(), lv_pct(100), lv_pct(100));
+    lv_obj_align(lv_scr_act(), LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_clear_flag(lv_scr_act(), LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_clear_flag(map_bg, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(map_bg, 0, 0);
 
     lv_point_t centerPx = locToPx(centerLoc, zoom);
     int tile_x = centerPx.x / TILE_SIZE;
@@ -430,7 +432,7 @@ static void createMap() {
     for (const int dx : TILES_X_SCAN) {
         for (const int dy : TILES_Y_SCAN) {
             const Tile t = {
-                lv_img_create(map_bg),
+                lv_img_create(lv_scr_act()),
                 SCREEN_CENTER_X + dx * TILE_SIZE - x_offset,
                 SCREEN_CENTER_Y + dy * TILE_SIZE - y_offset,
                 tile_x + dx,
@@ -439,19 +441,10 @@ static void createMap() {
                 dy,
                 0
             };
-#ifdef DEBUG_TILE
-            static lv_style_t style;
-            lv_style_init(&style);
-            lv_style_set_border_width(&style, 1);
-            lv_style_set_border_color(&style, lv_color_hex(0xFF0000));
-            lv_obj_add_style(t.obj, &style, LV_PART_MAIN);
-            lv_obj_set_size(t.obj, TILE_SIZE, ERR_TIMEOUT);
-#endif
             lv_obj_align(t.obj, LV_ALIGN_TOP_LEFT, 0, 0);
             lv_obj_add_flag(t.obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_add_event_cb(t.obj, onDragTile, LV_EVENT_PRESSING, NULL);
             lv_obj_add_event_cb(t.obj, onClickTile, LV_EVENT_CLICKED, NULL);
-
             tiles.push_back(t);
         }
     }
@@ -477,45 +470,18 @@ static void createButtons() {
     btn_search = createBtn(LV_SYMBOL_HOME, x, y, onClickSearch);
 }
 
-// int offsetX = 0;
-// int offsetY = 0;
-//
-// static void slider_event_cbX(lv_event_t* e) {
-//     lv_obj_t* slider = static_cast<lv_obj_t*>(lv_event_get_target(e));
-//     offsetX = (lv_slider_get_value(slider) - 50);
-//     LOG("490:MapUI.cpp align:", offsetX);
-//     // lv_image_set_pivot(compass, offsetX, offsetY);
-//     lv_obj_align(compass, LV_ALIGN_CENTER, offsetX, offsetX);
-// }
-// static void slider_event_cbY(lv_event_t* e) {
-//     lv_obj_t* slider = static_cast<lv_obj_t*>(lv_event_get_target(e));
-//     offsetY = (lv_slider_get_value(slider) - 50);
-//     LOG("490:MapUI.cpp pivot:", offsetY);
-//     lv_obj_set_style_transform_pivot_x(compass, offsetY, 0);
-//     lv_obj_set_style_transform_pivot_y(compass, offsetY, 0);
-// }
-
 static void createMarkers(Location me, Location target) {
-    marker_target = {lv_label_create(map_bg), target, {0, 0}};
-    lv_obj_set_style_text_font(marker_target.obj, &icons, 0);
-    lv_label_set_text(marker_target.obj, ICON_LOCATION);
-    lv_obj_set_style_text_color(marker_target.obj, PRIMARY_COLOR, 0);
-    lv_obj_set_style_text_opa(marker_target.obj, MARKERS_OPACITY, 0);
-    lv_obj_set_style_text_align(marker_target.obj, LV_ALIGN_CENTER, 0);
-    lv_obj_center(marker_target.obj);
-    if (target.lat == 0.0) lv_obj_add_flag(marker_target.obj, LV_OBJ_FLAG_HIDDEN);
-
+    const auto img1 = lv_img_create(lv_scr_act());
+    lv_image_set_src(img1, &compass);
+    lv_obj_center(img1);
     Location myLoc = me.lat != 0.0 ? me : centerLoc;
-    compass = lv_label_create(map_bg);
-    lv_obj_set_style_text_font(compass, &icons, 0);
-    lv_label_set_text(compass, ICON_COMPASS);
-    lv_obj_center(compass);
-    lv_obj_set_style_text_color(compass, PRIMARY_COLOR, 0);
-    lv_obj_set_style_text_opa(compass, MARKERS_OPACITY, 0);
-    lv_obj_set_style_text_align(compass, LV_ALIGN_CENTER, 0);
-    lv_obj_set_style_transform_pivot_x(compass, 20, 0);
-    lv_obj_set_style_transform_pivot_y(compass, 20, 0);
-    marker_me = {compass, myLoc, locToCenterOffsetPx(myLoc, centerLoc, zoom)};
+    marker_me = {img1, myLoc, locToCenterOffsetPx(myLoc, centerLoc, zoom)};
+
+    const auto img2 = lv_img_create(lv_scr_act());
+    lv_image_set_src(img2, &marker);
+    lv_obj_center(img2);
+    if (target.lat == 0.0) lv_obj_add_flag(img2, LV_OBJ_FLAG_HIDDEN);
+    marker_target = {img2, target, {0, 0}};
 }
 
 static void createToast() {
@@ -571,6 +537,32 @@ static void createAddrList() {
     lv_obj_align(lst_addrs, LV_ALIGN_BOTTOM_MID, 0, -10);
 }
 
+#ifdef DEBUG_VALUES
+static void createDebugDashboard() {
+    lv_obj_t* slider1 = lv_slider_create(lv_scr_act());
+    lv_obj_align(slider1, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_slider_set_value(slider1, 50, LV_ANIM_OFF);
+    lv_obj_add_event_cb(slider1, [](lv_event_t* e) -> void {
+        lv_obj_t* slider = static_cast<lv_obj_t*>(lv_event_get_target(e));
+        int value = lv_slider_get_value(slider);
+        DEBUG_VALUE_1 = value - 50;
+        LOG("DEBUG_VALUE_1", DEBUG_VALUE_1);
+        updateMarkers();
+    }, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lv_obj_t* slider2 = lv_slider_create(lv_scr_act());
+    lv_obj_align(slider2, LV_ALIGN_BOTTOM_MID, 0, -40);
+    lv_slider_set_value(slider2, 50, LV_ANIM_OFF);
+    lv_obj_add_event_cb(slider2, [](lv_event_t* e) -> void {
+        lv_obj_t* slider = static_cast<lv_obj_t*>(lv_event_get_target(e));
+        int value = lv_slider_get_value(slider);
+        DEBUG_VALUE_2 = value - 50;
+        LOG("DEBUG_VALUE_2", DEBUG_VALUE_2);
+        updateMarkers();
+    }, LV_EVENT_VALUE_CHANGED, NULL);
+}
+#endif
+
 void Map_init(const BootState& state) {
     LOGI("Init Map");
 
@@ -585,6 +577,11 @@ void Map_init(const BootState& state) {
     distance = state.distance;
 
     createMap();
+
+#ifdef DEBUG_VALUES
+    createDebugDashboard();
+#endif
+
     createRoute();
     createMarkers(state.start, state.end);
     createButtons();
@@ -598,14 +595,6 @@ void Map_init(const BootState& state) {
     updateButtons();
 
     lv_timer_create(onCompassTimer, COMPASS_UPD_PERIOD, NULL);
-
-    // lv_obj_t* slider = lv_slider_create(lv_screen_active());
-    // lv_obj_align(slider, LV_ALIGN_BOTTOM_MID, 0, -40);
-    // lv_obj_add_event_cb(slider, slider_event_cbX, LV_EVENT_VALUE_CHANGED, NULL);
-    //
-    // lv_obj_t* slider2 = lv_slider_create(lv_screen_active());
-    // lv_obj_align(slider2, LV_ALIGN_BOTTOM_MID, 0, -10);
-    // lv_obj_add_event_cb(slider2, slider_event_cbY, LV_EVENT_VALUE_CHANGED, NULL);
 
     LOG(" ok");
 }

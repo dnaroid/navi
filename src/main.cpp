@@ -24,9 +24,9 @@ void updateCompassAndGPS(void* pvParameters) {
 #ifndef DISABLE_COMPASS
     compass.read();
     compass_angle = compass.heading();
-  }
 #endif
-  delay(COMPASS_UPD_PERIOD);
+    delay(COMPASS_UPD_PERIOD);
+  }
 }
 
 void setup() {
