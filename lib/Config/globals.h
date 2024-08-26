@@ -4,7 +4,7 @@
 #include "Arduino.h"
 
 extern float compass_angle;
-#define COMPASS_UPD_PERIOD 100
+#define COMPASS_UPD_PERIOD 500
 
 #define INIT_ZOOM 16
 

@@ -6,8 +6,10 @@
 #include <limits>
 #include <unordered_map>
 #include <queue>
+#include <sqlite3.h>
+#include "globals.h"
 
-class PathFinder {
+class PathFinderO {
 public:
     struct Edge {
         int target;
@@ -24,25 +26,28 @@ public:
     using NodeMap = std::unordered_map<int, Node>;
     using MinHeap = std::priority_queue<std::pair<int, int>, std::vector<std::pair<int, int>>, std::greater<std::pair<int, int>>>;
 
-    int loadGraph() {
+    int init() {
+        sqlite3_initialize();
         sqlite3* db;
         sqlite3_stmt* stmt;
         nodes.clear();
         graph.clear();
 
-        rc = sqlite3_open("/sd/graph-all.db", &db);
+        rc = sqlite3_open("/sd/graph-drive.db", &db);
         if (rc != SQLITE_OK) {
-            std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
+            LOG("Cannot open database: ", sqlite3_errmsg(db));
             return rc;
         }
+        LOG("Opened database successfully");
 
         const auto nodeQuery = "SELECT id, x, y FROM nodes";
         rc = sqlite3_prepare_v2(db, nodeQuery, -1, &stmt, nullptr);
         if (rc != SQLITE_OK) {
-            std::cerr << "Failed to fetch nodes: " << sqlite3_errmsg(db) << std::endl;
+            LOG("Failed to fetch nodes: ", sqlite3_errmsg(db));
             sqlite3_close(db);
             return rc;
         }
+        LOG("Fetched nodes successfully");
 
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             int id = sqlite3_column_int(stmt, 0);
@@ -51,15 +56,15 @@ public:
             nodes[id] = {id, x, y};
         }
         sqlite3_finalize(stmt);
-        print("->50:PathFinder.h nodes:", nodes.size());
 
         const auto edgeQuery = "SELECT source, target, weight FROM edges";
         rc = sqlite3_prepare_v2(db, edgeQuery, -1, &stmt, nullptr);
         if (rc != SQLITE_OK) {
-            std::cerr << "Failed to fetch edges: " << sqlite3_errmsg(db) << std::endl;
+            LOG("Failed to fetch edges: ", sqlite3_errmsg(db));
             sqlite3_close(db);
             return rc;
         }
+        LOG("Fetched edges successfully");
 
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             int source = sqlite3_column_int(stmt, 0);
@@ -69,8 +74,8 @@ public:
         }
         sqlite3_finalize(stmt);
         sqlite3_close(db);
-        print("->67:PathFinder.h graph:", graph.size());
 
+        LOG("Init ok");
         return SQLITE_OK;
     }
 
@@ -127,19 +132,20 @@ public:
         for (int nodeId : nodePath) {
             const Node& node = nodes[nodeId];
             path.push_back({node.x, node.y});
-            if (px != 0) distance += realDistance(px, py, node.x, node.y);
+            if (px != 0) distance += getRealDistance(px, py, node.x, node.y);
             px = node.x;
             py = node.y;
         }
-        print("->126:PathFinder.h distance:", distance);
-        return nodePath.size();
+        nodePath.clear();
+        LOG("Found path, distance:", distance, "km");
+        return path.size();
     }
 
-    static float euclideanDistance(const float x1, const float y1, const float x2, const float y2) {
+    static float getDistance(const float x1, const float y1, const float x2, const float y2) {
         return std::sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
     }
 
-    static float realDistance(const float lon1, const float lat1, const float lon2, const float lat2) {
+    static float getRealDistance(const float lon1, const float lat1, const float lon2, const float lat2) {
         constexpr float R = 6371.0;
         const float dLat = (lat2 - lat1) * M_PI / 180.0;
         const float dLon = (lon2 - lon1) * M_PI / 180.0;
@@ -156,7 +162,7 @@ public:
 
         for (const auto& kv : nodes) {
             const Node& node = kv.second;
-            const float distance = euclideanDistance(loc.lon, loc.lat, node.x, node.y);
+            const float distance = getDistance(loc.lon, loc.lat, node.x, node.y);
             if (distance < minDistance) {
                 minDistance = distance;
                 nearestNodeId = node.id;
@@ -165,7 +171,7 @@ public:
         return nearestNodeId;
     }
 
-    std::vector<Location> path;
+    std::vector<Location> path = {};
     float distance = 0.0;
 
 private:

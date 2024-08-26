@@ -107,9 +107,6 @@ void loop() {
   } else if (mode == ModeMirror) {
   }
 
-  return;
-
-
 #ifndef DISABLE_GPS
   bool gps = false;
 
