@@ -26,7 +26,7 @@ public:
 
     using Graph = std::vector<std::vector<Edge>>;
 
-    int MAX_NODES;
+    int nodesCount;
     Node* nodes;
     int* previous;
     int* distances;
@@ -34,6 +34,8 @@ public:
     int memoryLimit = 10000;
     std::vector<Location> path = {};
     float distance = 0.0;
+    int zoom = ZOOM_MIN;
+    Location pathCenter;
     sqlite3_stmt* stmt;
 
     static float getDistance(const float x1, const float y1, const float x2, const float y2) {
@@ -73,8 +75,8 @@ public:
         }
 
         if (sqlite3_step(stmt) == SQLITE_ROW) {
-            MAX_NODES = sqlite3_column_int(stmt, 0);
-            LOG("81:PathFinder.h MAX_NODES:", MAX_NODES);
+            nodesCount = sqlite3_column_int(stmt, 0);
+            LOG("81:PathFinder.h MAX_NODES:", nodesCount);
         } else {
             LOG("Failed to fetch node count.");
             sqlite3_finalize(stmt);
@@ -83,13 +85,13 @@ public:
         }
         sqlite3_finalize(stmt);
 
-        nodes = new Node[MAX_NODES];
+        nodes = new Node[nodesCount];
         LOG("93:PathFinder.h nodes");
-        previous = new int[MAX_NODES];
+        previous = new int[nodesCount];
         LOG("95:PathFinder.h previous");
-        distances = new int[MAX_NODES];
+        distances = new int[nodesCount];
         LOG("97:PathFinder.h distances");
-        graph.resize(MAX_NODES);
+        graph.resize(nodesCount);
         LOG("99:PathFinder.h graph");
 
         const auto nodeQuery = "SELECT id, x, y FROM nodes";
@@ -133,6 +135,7 @@ public:
 
     int findPath(const Location start, const Location end) {
         size_t freeMemory = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+        pathCenter = end;
         LOG("62:PathFinder.h free_memory:", freeMemory);
         memoryLimit = freeMemory - 100 * 1024;
         LOG("138:PathFinder.h memoryLimit:", memoryLimit);
@@ -145,8 +148,8 @@ public:
             return 0;
         }
 
-        std::fill(previous, previous + MAX_NODES, -1);
-        std::fill(distances, distances + MAX_NODES, std::numeric_limits<int>::max());
+        std::fill(previous, previous + nodesCount, -1);
+        std::fill(distances, distances + nodesCount, std::numeric_limits<int>::max());
 
         using MinHeap = std::priority_queue<std::pair<int, int>, std::vector<std::pair<int, int>>, std::greater<std::pair<int, int>>>;
         MinHeap min_heap;
@@ -199,7 +202,6 @@ public:
         return path.size();
     }
 
-private:
     sqlite3* db = nullptr;
     int rc = 0;
     std::vector<int> nodePath;
@@ -209,7 +211,7 @@ private:
         int nearestNodeId = -1;
         float minDistance = std::numeric_limits<float>::max();
 
-        for (int i = 0; i < MAX_NODES; ++i) {
+        for (int i = 0; i < nodesCount; ++i) {
             const Node& node = nodes[i];
             const float distance = getDistance(loc.lon, loc.lat, node.x, node.y);
             if (distance < minDistance) {
@@ -218,6 +220,53 @@ private:
             }
         }
         return nearestNodeId;
+    }
+
+    void calculateMapCenterAndZoom() {
+        float tileSize = 0.1f;
+        if (path.empty()) {
+            return; // Нет маршрута
+        }
+
+        // Шаг 1: Определите минимальные и максимальные координаты
+        float minLon = std::numeric_limits<float>::max();
+        float maxLon = std::numeric_limits<float>::lowest();
+        float minLat = std::numeric_limits<float>::max();
+        float maxLat = std::numeric_limits<float>::lowest();
+
+        for (const auto& loc : path) {
+            if (loc.lon < minLon) minLon = loc.lon;
+            if (loc.lon > maxLon) maxLon = loc.lon;
+            if (loc.lat < minLat) minLat = loc.lat;
+            if (loc.lat > maxLat) maxLat = loc.lat;
+        }
+
+        // Шаг 2: Рассчитайте центр карты
+        pathCenter = {
+            .lon = (minLon + maxLon) / 2.0f,
+            .lat = (minLat + maxLat) / 2.0f,
+        };
+
+        // Шаг 3: Рассчитайте масштаб (zoom)
+        float pathWidth = maxLon - minLon;
+        float pathHeight = maxLat - minLat;
+
+        // Определите максимальный размер в градусах, который нужно уместить на экран
+        float maxSizeInDegrees = std::max(pathWidth, pathHeight);
+
+        // Определите, сколько тайлов требуется для отображения маршрута
+        float tilesNeeded = maxSizeInDegrees / tileSize;
+
+        // Учитывая размер экрана и количество тайлов, определите уровень зума
+        // Простой расчет зума. Уровень 0 – это 1 тайл на экране, увеличивайте, пока размер тайла не станет меньше экрана
+        zoom = ZOOM_MIN;
+        while (tilesNeeded > std::max(SCREEN_WIDTH, SCREEN_HEIGHT) / tileSize && zoom <= ZOOM_MAX) {
+            zoom++;
+            tilesNeeded /= 2.0f; // Увеличиваем уровень зума в 2 раза
+        }
+
+        // Уровень зума должен быть целым числом, если нужно, округлите его
+        zoom = std::floor(zoom);
     }
 };
 

@@ -87,7 +87,8 @@ void setup() {
     sqlite3_initialize();
     pf.init();
     pf.findPath(state.start, state.end);
-    writeBootState({CURRENT_BM_VER, ModeMap, state.center, state.zoom, state.start, state.end, pf.path, pf.distance});
+    pf.calculateMapCenterAndZoom();
+    writeBootState({CURRENT_BM_VER, ModeMap, pf.pathCenter, pf.zoom, state.start, state.end, pf.path, pf.distance});
     esp_restart();
     break;
 

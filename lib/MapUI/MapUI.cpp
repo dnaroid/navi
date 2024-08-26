@@ -13,9 +13,6 @@ LV_FONT_DECLARE(icons)
 #define ICON_LOCATION "\xEE\xA5\x87"
 #define ICON_COMPASS  "\xEE\xA8\xB2"
 // #define DEBUG_TILE
-#define TILE_SIZE 256
-#define ZOOM_MIN 12
-#define ZOOM_MAX 18
 #define DRAG_THRESHOLD 10
 #define FILE_NAME_SIZE 40
 #define MARKERS_OPACITY 180
@@ -214,7 +211,7 @@ static void updateMarkers(bool onlyMe = false) {
     }
     if (!onlyMe && marker_target.obj != nullptr && !lv_obj_has_flag(marker_target.obj, LV_OBJ_FLAG_HIDDEN)) {
         marker_target.pos = locToCenterOffsetPx(marker_target.loc, centerLoc, zoom);
-        lv_obj_set_pos(marker_target.obj, marker_target.pos.x, marker_target.pos.y - 25);
+        lv_obj_set_pos(marker_target.obj, marker_target.pos.x, marker_target.pos.y);
     }
 }
 

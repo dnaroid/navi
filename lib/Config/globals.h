@@ -34,7 +34,9 @@ extern float compass_angle;
 /// --- screen
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 480
-
+#define TILE_SIZE 256
+#define ZOOM_MIN 12
+#define ZOOM_MAX 18
 
 /// --- compass
 #define COMPASS_ANGLE_STEP 10
