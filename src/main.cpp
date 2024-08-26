@@ -1,5 +1,6 @@
 #include <PathFinder.h>
 #include <SD.h>
+#include <secrets.h>
 #include <SPI.h>
 #include <Wire.h>
 #include "WiFi.h"
@@ -9,21 +10,83 @@
 #include "Touch.h"
 #include "Display.h"
 #include "BootManager.h"
+#include "TinyGPSPlus.h"
 #include "../lv_conf.h"
+
+// global
+float compass_angle;
+Location my_location = {0, 0};
+
+TinyGPSPlus gps;
+LSM303 compass;
+HardwareSerial gpsSerial(1);
 
 static BootState state;
 static Mode mode = ModeMap;
 static PathFinder pf;
 auto spiSD = SPIClass(FSPI);
-LSM303 compass;
 
-float compass_angle;
+int gpsSkips = 0;
+
+void displayGPSInfo() {
+  Serial.print(F("Location: "));
+  if (gps.location.isValid()) {
+    Serial.print(gps.location.lat(), 6);
+    Serial.print(F(","));
+    Serial.print(gps.location.lng(), 6);
+  } else {
+    Serial.print(F("INVALID"));
+  }
+
+  Serial.print(F("  Date/Time: "));
+  if (gps.date.isValid()) {
+    Serial.print(gps.date.month());
+    Serial.print(F("/"));
+    Serial.print(gps.date.day());
+    Serial.print(F("/"));
+    Serial.print(gps.date.year());
+  } else {
+    Serial.print(F("INVALID"));
+  }
+
+  Serial.print(F(" "));
+  if (gps.time.isValid()) {
+    if (gps.time.hour() < 10) Serial.print(F("0"));
+    Serial.print(gps.time.hour());
+    Serial.print(F(":"));
+    if (gps.time.minute() < 10) Serial.print(F("0"));
+    Serial.print(gps.time.minute());
+    Serial.print(F(":"));
+    if (gps.time.second() < 10) Serial.print(F("0"));
+    Serial.print(gps.time.second());
+    Serial.print(F("."));
+    if (gps.time.centisecond() < 10) Serial.print(F("0"));
+    Serial.print(gps.time.centisecond());
+  } else {
+    Serial.print(F("INVALID"));
+  }
+
+  Serial.println();
+}
 
 void updateCompassAndGPS(void* pvParameters) {
   while (true) {
 #ifndef DISABLE_COMPASS
     compass.read();
     compass_angle = compass.heading();
+#endif
+#ifndef DISABLE_GPS
+    if (gpsSkips++ < GPS_UPD_SKIPS) continue;
+    while (gpsSerial.available() > 0) {
+      gps.encode(gpsSerial.read());
+    }
+    if (gps.location.isUpdated()) {
+      float gpsLat = gps.location.lat();
+      float gpsLon = gps.location.lng();
+      my_location.lat = gpsLat;
+      my_location.lon = gpsLon;
+    }
+    gpsSkips = 0;
 #endif
     delay(COMPASS_UPD_PERIOD);
   }
@@ -33,10 +96,6 @@ void setup() {
   START_SERIAL
 
   btStop(); // Bluetooth OFF
-
-#ifndef DISABLE_GPS
-  gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
-#endif
 
 #ifndef DISABLE_SERVER
   WiFi.persistent(false);
@@ -77,6 +136,11 @@ void setup() {
     compass.m_max = (LSM303::vector<int16_t>){+331, +353, +4};
     LOG(" ok");
 #endif
+#ifndef DISABLE_GPS
+    LOGI("Init GPS");
+    gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
+    LOG(" ok");
+#endif
 
     Map_init(state);
 
@@ -107,33 +171,6 @@ void loop() {
   } else if (mode == ModeRoute) {
   } else if (mode == ModeMirror) {
   }
-
-#ifndef DISABLE_GPS
-  bool gps = false;
-
-  if (now > gpsUpdateAfterMs) {
-    gps = true;
-    // while (gpsSerial.available() > 0) {
-    //   gps.encode(gpsSerial.read());
-    // }
-    // if (gps.location.isUpdated()) {
-    //   float gpsLat = gps.location.lat();
-    //   float gpsLon = gps.location.lng();
-    //   if (std::abs(myLoc.lat - gpsLat) > MIN_COORD_CHANGE || (std::abs(myLoc.lon - gpsLon) > MIN_COORD_CHANGE)) {
-    //     myLoc.lat = gpsLat;
-    //     myLoc.lon = gpsLon;
-    //     Button locBtn = ui.findButtonByText("L");
-    //     if (!locBtn.enabled()) { // todo: support the lost location case
-    //       locBtn.enabled(true);
-    //       ui.update();
-    //     }
-    //   }
-    // }
-    // a9g.loop(gps);
-
-    gpsUpdateAfterMs = now + GPS_UPDATE_PERIOD;
-  }
-#endif
 
 #ifndef DISABLE_SERVER
   ServerLoop();

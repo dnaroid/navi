@@ -3,17 +3,20 @@
 
 #include "Arduino.h"
 
+struct Location {
+  float lon;
+  float lat;
+};
+
 extern float compass_angle;
-#define COMPASS_UPD_PERIOD 100
+extern Location my_location;
 
 #define INIT_ZOOM 16
 
 /// --- features disabling
 #define DISABLE_SERVER
 // #define DISABLE_COMPASS
-#define DISABLE_GPS
-
-#define TINY_GSM_MODEM_SIM800
+// #define DISABLE_GPS
 
 /// --- pins
 #define SD_CS 7
@@ -26,10 +29,6 @@ extern float compass_angle;
 
 #define GPS_RX 47
 #define GPS_TX 48
-
-// #define A9G_PON 4
-// #define A9G_LOWP 5
-// #define A9G_RST 6
 
 /// --- screen
 #define SCREEN_WIDTH 320
@@ -45,47 +44,11 @@ extern float compass_angle;
 #define COMPASS_MAGNETIC_DECLINATION_M 43
 
 /// --- timing
-#define COMPASS_UPDATE_PERIOD 1000
-#define GPS_UPDATE_PERIOD 10000
-
-/// --- GPS
-#define MIN_COORD_CHANGE 0.0001
+#define COMPASS_UPD_PERIOD 100
+#define GPS_UPD_SKIPS 20
 
 /// remote
-#define ADDR_SEARCH_LIMIT 5
 #define IMAGE_CAPTURE_URL "http://192.168.4.1/jpg"
-
-#define TINY_GSM_RX_BUFFER 650
-
-// See all AT commands, if wanted
-#define DUMP_AT_COMMANDS
-
-// Define the serial console for debug prints, if needed
-#define TINY_GSM_DEBUG Serial
-// #define LOGGING  // <- Logging is for the HTTP library
-
-// Range to attempt to autobaud
-// NOTE:  DO NOT AUTOBAUD in production code.  Once you've established
-// communication, set a fixed baud rate using modem.setBaud(#).
-#define GSM_AUTOBAUD_MIN 9600
-#define GSM_AUTOBAUD_MAX 115200
-
-#define LV_LVGL_H_INCLUDE_SIMPLE
-
-
-// Add a reception delay, if needed.
-// This may be needed for a fast processor at a slow baud rate.
-// #define TINY_GSM_YIELD() { delay(2); }
-
-struct Location {
-  float lon;
-  float lat;
-};
-
-struct Point {
-  int x;
-  int y;
-};
 
 inline void print() {
 }

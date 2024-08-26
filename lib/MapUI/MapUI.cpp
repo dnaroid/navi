@@ -28,6 +28,7 @@ LV_IMG_DECLARE(compass)
 #define MARKER_TARGET_OY (-25)
 #define MARKER_ME_OX (0)
 #define MARKER_ME_OY (0)
+#define ADDR_SEARCH_LIMIT 5
 // first tile should be central!
 #define TILES_X_SCAN {0,-1,1}
 #define TILES_Y_SCAN {0,-1,1}
@@ -215,7 +216,7 @@ static void searchAddress() {
 }
 
 static void updateMarkers(bool onlyMe = false) {
-    if (marker_me.obj != nullptr) {
+    if (marker_me.obj != nullptr && !lv_obj_has_flag(marker_me.obj, LV_OBJ_FLAG_HIDDEN)) {
         marker_me.pos = locToCenterOffsetPx(marker_me.loc, centerLoc, zoom);
         lv_obj_set_pos(marker_me.obj, marker_me.pos.x + MARKER_ME_OX, marker_me.pos.y + MARKER_ME_OY);
     }
@@ -295,12 +296,6 @@ static void onDragTile(lv_event_t* e) {
     updateButtons();
 }
 
-static void onCompassTimer(lv_timer_t* timer) {
-    auto angle_fixed = -(int16_t)(((int)compass_angle - 90) % 360 * 10);
-    lv_image_set_rotation(marker_me.obj, angle_fixed);
-    updateMarkers(true);
-}
-
 static void onClickAddrList(lv_event_t* e) {
     auto* btn = static_cast<lv_obj_t*>(lv_event_get_target(e));
     int index = lv_obj_get_index(btn);
@@ -368,6 +363,24 @@ static void onClickGps(lv_event_t* e) {
     updateMarkers();
     updateRoute();
     updateButtons();
+}
+
+static void onCompassTimer(lv_timer_t* timer) {
+    // todo watch lost connection
+    if (lv_obj_has_flag(marker_me.obj, LV_OBJ_FLAG_HIDDEN)) {
+        if (my_location.lon != 0) {
+            marker_me.loc = my_location;
+            LOG("373:MapUI.cpp GPS found:", my_location.lon, my_location.lat);
+            lv_obj_remove_flag(marker_me.obj, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_state(btn_gps, LV_STATE_DISABLED);
+            onClickGps(nullptr);
+        }
+    } else {
+        marker_me.loc = my_location;
+        auto angle_fixed = -(int16_t)(((int)compass_angle - 90) % 360 * 10);
+        lv_image_set_rotation(marker_me.obj, angle_fixed);
+        updateMarkers(true);
+    }
 }
 
 static void onClickRoute(lv_event_t* e) {
@@ -457,6 +470,7 @@ static void createButtons() {
     btn_zoom_out = createBtn(LV_SYMBOL_MINUS, x, y, onClickZoom);
     y += step;
     btn_gps = createBtn(LV_SYMBOL_GPS, x, y, onClickGps);
+    lv_obj_add_state(btn_gps, LV_STATE_DISABLED);
     y += step;
     btn_route = createBtn(LV_SYMBOL_SHUFFLE, x, y, onClickRoute);
     if (distance > 0) {
@@ -474,6 +488,7 @@ static void createMarkers(Location me, Location target) {
     const auto img1 = lv_img_create(lv_scr_act());
     lv_image_set_src(img1, &compass);
     lv_obj_center(img1);
+    if (my_location.lat == 0.0) lv_obj_add_flag(img1, LV_OBJ_FLAG_HIDDEN);
     Location myLoc = me.lat != 0.0 ? me : centerLoc;
     marker_me = {img1, myLoc, locToCenterOffsetPx(myLoc, centerLoc, zoom)};
 

@@ -37,6 +37,9 @@ public:
     int zoom = ZOOM_MIN;
     Location pathCenter;
     sqlite3_stmt* stmt;
+    sqlite3* db = nullptr;
+    int rc = 0;
+    std::vector<int> nodePath;
 
     static float getDistance(const float x1, const float y1, const float x2, const float y2) {
         return std::sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
@@ -137,7 +140,7 @@ public:
         size_t freeMemory = heap_caps_get_free_size(MALLOC_CAP_8BIT);
         pathCenter = end;
         LOG("62:PathFinder.h free_memory:", freeMemory);
-        memoryLimit = freeMemory - 100 * 1024;
+        memoryLimit = freeMemory - 50 * 1024;
         LOG("138:PathFinder.h memoryLimit:", memoryLimit);
 
         const int startNode = findNearestNode(start);
@@ -175,9 +178,8 @@ public:
                 }
             }
 
-            // Логика для ограничения памяти
             if (min_heap.size() > memoryLimit) {
-                min_heap.pop(); // Удаляем наименее перспективный узел
+                min_heap.pop();
             }
         }
 
@@ -190,7 +192,6 @@ public:
         distance = 0.0;
         float px = 0;
         float py = 0;
-        path.clear();
         for (int nodeId : nodePath) {
             const Node& node = nodes[nodeId];
             path.push_back({node.x, node.y});
@@ -201,11 +202,6 @@ public:
         LOG("Found path, distance:", distance, "km");
         return path.size();
     }
-
-    sqlite3* db = nullptr;
-    int rc = 0;
-    std::vector<int> nodePath;
-
 
     int findNearestNode(const Location loc) const {
         int nearestNodeId = -1;
@@ -224,11 +220,8 @@ public:
 
     void calculateMapCenterAndZoom() {
         float tileSize = 0.1f;
-        if (path.empty()) {
-            return; // Нет маршрута
-        }
+        if (path.empty()) return;
 
-        // Шаг 1: Определите минимальные и максимальные координаты
         float minLon = std::numeric_limits<float>::max();
         float maxLon = std::numeric_limits<float>::lowest();
         float minLat = std::numeric_limits<float>::max();
@@ -241,32 +234,36 @@ public:
             if (loc.lat > maxLat) maxLat = loc.lat;
         }
 
-        // Шаг 2: Рассчитайте центр карты
         pathCenter = {
             .lon = (minLon + maxLon) / 2.0f,
             .lat = (minLat + maxLat) / 2.0f,
         };
 
-        // Шаг 3: Рассчитайте масштаб (zoom)
         float pathWidth = maxLon - minLon;
         float pathHeight = maxLat - minLat;
 
-        // Определите максимальный размер в градусах, который нужно уместить на экран
+        // Рассчитайте максимальный размер в градусах, который нужно уместить на экран
         float maxSizeInDegrees = std::max(pathWidth, pathHeight);
 
-        // Определите, сколько тайлов требуется для отображения маршрута
-        float tilesNeeded = maxSizeInDegrees / tileSize;
+        // Рассчитайте количество пикселей на градус на текущем уровне зума
+        auto degreesPerTile = [&](int zoomLevel) -> float {
+            return tileSize / (1 << zoomLevel);
+        };
 
-        // Учитывая размер экрана и количество тайлов, определите уровень зума
-        // Простой расчет зума. Уровень 0 – это 1 тайл на экране, увеличивайте, пока размер тайла не станет меньше экрана
         zoom = ZOOM_MIN;
-        while (tilesNeeded > std::max(SCREEN_WIDTH, SCREEN_HEIGHT) / tileSize && zoom <= ZOOM_MAX) {
-            zoom++;
-            tilesNeeded /= 2.0f; // Увеличиваем уровень зума в 2 раза
-        }
 
-        // Уровень зума должен быть целым числом, если нужно, округлите его
-        zoom = std::floor(zoom);
+        // Проверяем от ZOOM_MAX до ZOOM_MIN, чтобы найти минимальный зум, который умещает весь маршрут на экране
+        for (int currentZoom = ZOOM_MIN; currentZoom <= ZOOM_MAX; ++currentZoom) {
+            float degreesPerPixel = degreesPerTile(currentZoom) / tileSize;
+            float screenWidthInDegrees = SCREEN_WIDTH * degreesPerPixel;
+            float screenHeightInDegrees = SCREEN_HEIGHT * degreesPerPixel;
+
+            if (maxSizeInDegrees <= std::min(screenWidthInDegrees, screenHeightInDegrees)) {
+                zoom = currentZoom;
+            } else {
+                break;
+            }
+        }
     }
 };
 
