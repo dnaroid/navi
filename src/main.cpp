@@ -26,7 +26,6 @@ static Mode mode = ModeMap;
 static PathFinder pf;
 auto spiSD = SPIClass(FSPI);
 
-int gpsSkips = 0;
 
 void displayGPSInfo() {
   Serial.print(F("Location: "));
@@ -69,6 +68,9 @@ void displayGPSInfo() {
   Serial.println();
 }
 
+int gpsSkips = 0;
+int gpsInfoSkips = 0;
+
 void updateCompassAndGPS(void* pvParameters) {
   while (true) {
 #ifndef DISABLE_COMPASS
@@ -79,6 +81,10 @@ void updateCompassAndGPS(void* pvParameters) {
     if (gpsSkips++ < GPS_UPD_SKIPS) continue;
     while (gpsSerial.available() > 0) {
       gps.encode(gpsSerial.read());
+      if (gpsInfoSkips++ > 100) {
+        displayGPSInfo();
+        gpsInfoSkips = 0;
+      }
     }
     if (gps.location.isUpdated()) {
       float gpsLat = gps.location.lat();
