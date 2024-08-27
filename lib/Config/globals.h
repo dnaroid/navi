@@ -3,6 +3,8 @@
 
 #include "Arduino.h"
 
+#define LV_LVGL_H_INCLUDE_SIMPLE
+
 struct Location {
   float lon;
   float lat;
@@ -19,13 +21,13 @@ extern Location my_location;
 // #define DISABLE_GPS
 
 /// --- pins
-#define SD_CS 7
-#define SD_MOSI 17
-#define SD_SCK 16
-#define SD_MISO 15
+#define SD_CS    7
+#define SD_MOSI 11
+#define SD_SCK  12
+#define SD_MISO 13
 
 #define I2C_SDA 18
-#define I2C_SCL 9
+#define I2C_SCL  9
 
 #define GPS_RX 47
 #define GPS_TX 48
@@ -33,6 +35,8 @@ extern Location my_location;
 /// --- screen
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 480
+#define SCREEN_CENTER_X (SCREEN_WIDTH/2)
+#define SCREEN_CENTER_Y (SCREEN_HEIGHT/2)
 #define TILE_SIZE 256
 #define ZOOM_MIN 12
 #define ZOOM_MAX 18

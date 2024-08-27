@@ -58,7 +58,7 @@
 //#include <User_Setups/Setup25_TTGO_T_Display.h>    // Setup file for ESP32 and TTGO T-Display ST7789V SPI bus TFT
 //#include <User_Setups/Setup26_TTGO_T_Wristband.h>  // Setup file for ESP32 and TTGO T-Wristband ST7735 SPI bus TFT
 
-//#include <User_Setups/Setup27_RPi_ST7796_ESP32.h>    // ESP32   RPi MHS-4.0 inch Display-B
+// #include <User_Setups/Setup27_RPi_ST7796_ESP32.h>    // ESP32   RPi MHS-4.0 inch Display-B
 //#include <User_Setups/Setup28_RPi_ST7796_ESP8266.h>  // ESP8266 RPi MHS-4.0 inch Display-B
 
 //#include <User_Setups/Setup29_ILI9341_STM32.h>          // Setup for Nucleo board
@@ -71,9 +71,9 @@
 //#include <User_Setups/Setup34_ILI9481_Parallel_STM32.h> // Setup for Nucleo board and parallel display
 //#include <User_Setups/Setup35_ILI9341_STM32_Port_Bus.h> // Setup for STM32 port A parallel display
 
-//#include <User_Setups/Setup36_RPi_touch_ST7796.h>      // Setup file configured for ESP32 and RPi ST7796 TFT with touch
+// #include <User_Setups/Setup36_RPi_touch_ST7796.h>      // Setup file configured for ESP32 and RPi ST7796 TFT with touch
 
-//#include <User_Setups/Setup42_ILI9341_ESP32.h>           // Setup file for ESP32 and SPI ILI9341 240x320
+// #include <User_Setups/Setup42_ILI9341_ESP32.h>           // Setup file for ESP32 and SPI ILI9341 240x320
 //#include <User_Setups/Setup43_ST7735.h>            // Setup file for ESP8266 & ESP32 configured for my ST7735S 80x160
 //#include <User_Setups/Setup44_TTGO_CameraPlus.h>   // Setup file for ESP32 and TTGO T-CameraPlus ST7789 SPI bus TFT    240x240
 //#include <User_Setups/Setup45_TTGO_T_Watch.h>      // Setup file for ESP32 and TTGO T-Watch ST7789 SPI bus TFT  240x240
@@ -199,8 +199,8 @@
 
 // Load the right driver definition - do not tinker here !
 #if   defined (ILI9341_DRIVER) || defined(ILI9341_2_DRIVER) || defined (ILI9342_DRIVER)
-     #include <TFT_Drivers/ILI9341_Defines.h>
-     #define  TFT_DRIVER 0x9341
+#include <TFT_Drivers/ILI9341_Defines.h>
+#define  TFT_DRIVER 0x9341
 #elif defined (ST7735_DRIVER)
      #include <TFT_Drivers/ST7735_Defines.h>
      #define  TFT_DRIVER 0x7735
@@ -277,7 +277,7 @@
      #include "TFT_Drivers/XYZZY_Defines.h"
      #define  TFT_DRIVER 0x0000
 #else
-     #define  TFT_DRIVER 0x0000
+#define  TFT_DRIVER 0x0000
 #endif
 
 // These are the pins for ESP8266 boards

@@ -24,52 +24,9 @@ HardwareSerial gpsSerial(1);
 static BootState state;
 static Mode mode = ModeMap;
 static PathFinder pf;
-auto spiSD = SPIClass(FSPI);
 
-
-void displayGPSInfo() {
-  Serial.print(F("Location: "));
-  if (gps.location.isValid()) {
-    Serial.print(gps.location.lat(), 6);
-    Serial.print(F(","));
-    Serial.print(gps.location.lng(), 6);
-  } else {
-    Serial.print(F("INVALID"));
-  }
-
-  Serial.print(F("  Date/Time: "));
-  if (gps.date.isValid()) {
-    Serial.print(gps.date.month());
-    Serial.print(F("/"));
-    Serial.print(gps.date.day());
-    Serial.print(F("/"));
-    Serial.print(gps.date.year());
-  } else {
-    Serial.print(F("INVALID"));
-  }
-
-  Serial.print(F(" "));
-  if (gps.time.isValid()) {
-    if (gps.time.hour() < 10) Serial.print(F("0"));
-    Serial.print(gps.time.hour());
-    Serial.print(F(":"));
-    if (gps.time.minute() < 10) Serial.print(F("0"));
-    Serial.print(gps.time.minute());
-    Serial.print(F(":"));
-    if (gps.time.second() < 10) Serial.print(F("0"));
-    Serial.print(gps.time.second());
-    Serial.print(F("."));
-    if (gps.time.centisecond() < 10) Serial.print(F("0"));
-    Serial.print(gps.time.centisecond());
-  } else {
-    Serial.print(F("INVALID"));
-  }
-
-  Serial.println();
-}
-
+auto spiShared = SPIClass(HSPI);
 int gpsSkips = 0;
-int gpsInfoSkips = 0;
 
 void updateCompassAndGPS(void* pvParameters) {
   while (true) {
@@ -81,10 +38,6 @@ void updateCompassAndGPS(void* pvParameters) {
     if (gpsSkips++ < GPS_UPD_SKIPS) continue;
     while (gpsSerial.available() > 0) {
       gps.encode(gpsSerial.read());
-      if (gpsInfoSkips++ > 100) {
-        displayGPSInfo();
-        gpsInfoSkips = 0;
-      }
     }
     if (gps.location.isUpdated()) {
       float gpsLat = gps.location.lat();
@@ -109,8 +62,8 @@ void setup() {
 #endif
 
   LOGI("Init Card reader");
-  spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  while (!SD.begin(SD_CS, spiSD, 70000000, "/sd", 10)) {
+  spiShared.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  while (!SD.begin(SD_CS, spiShared, 70000000, "/sd", 10)) {
     delay(100);
     LOGI(".");
   }
@@ -151,6 +104,7 @@ void setup() {
     Map_init(state);
 
     xTaskCreatePinnedToCore(updateCompassAndGPS, "UpdateTask", 4096, NULL, 1, NULL, 1);
+
     break;
 
   case ModeRoute:

@@ -7,6 +7,7 @@
 #include "montserrat_14_pl.c"
 #include "marker.c"
 #include "compass.c"
+#include "UIhelpers.cpp"
 
 #define DEBUG_MAP 0
 #if DEBUG_MAP == 1
@@ -16,11 +17,19 @@ static int DEBUG_VALUE_2 = 0;
 #endif
 
 LV_FONT_DECLARE(montserrat_14_pl)
+
+#define SYMBOL_ZOOM_IN  "0"
+#define SYMBOL_ZOOM_OUT "1"
+#define SYMBOL_GPS_OFF  "3"
+#define SYMBOL_GPS_ON   "2"
+#define SYMBOL_ROUTE    "4"
+#define SYMBOL_SEARCH   "5"
+#define SYMBOL_MIRROR   "6"
+#define SYMBOL_EXIT     "7"
+
 LV_IMG_DECLARE(marker)
 LV_IMG_DECLARE(compass)
 
-#define ICON_LOCATION "\xEE\xA5\x87"
-#define ICON_COMPASS  "\xEE\xA8\xB2"
 #define DRAG_THRESHOLD 10
 #define FILE_NAME_SIZE 40
 #define MARKERS_OPACITY 180
@@ -34,8 +43,6 @@ LV_IMG_DECLARE(compass)
 #define TILES_Y_SCAN {0,-1,1}
 #define PRIMARY_COLOR lv_color_hex(0x2196F3)
 #define TOAST_COLOR lv_color_hex(0xFF5722)
-#define SCREEN_CENTER_X (SCREEN_WIDTH/2)
-#define SCREEN_CENTER_Y (SCREEN_HEIGHT/2)
 
 struct UICommand {
     const char* command;
@@ -79,6 +86,7 @@ static lv_obj_t* btn_zoom_out;
 static lv_obj_t* btn_gps;
 static lv_obj_t* btn_route;
 static lv_obj_t* btn_search;
+static lv_obj_t* btn_mirror;
 static lv_obj_t* line_route;
 static lv_obj_t* keyboard;
 static lv_obj_t* search_field;
@@ -94,94 +102,25 @@ static std::vector<Tile> tiles;
 static std::vector<Location> route = {};
 static float distance = -1;
 
-static lv_point_t locToPx(Location loc, int zoom) {
-    int n = 1 << zoom;
-    int x = static_cast<int>((loc.lon + 180.0) / 360.0 * n * TILE_SIZE);
-    float radLat = loc.lat * M_PI / 180.0;
-    int y = static_cast<int>((1 - std::log(std::tan(radLat) + 1 / std::cos(radLat)) / M_PI) / 2 * n * TILE_SIZE);
-    return {x, y};
-}
-
-static lv_point_precise_t locToPPx(Location loc, int zoom) {
-    int n = 1 << zoom;
-    lv_value_precise_t x = ((loc.lon + 180.0) / 360.0 * n * TILE_SIZE);
-    float radLat = loc.lat * M_PI / 180.0;
-    lv_value_precise_t y = ((1 - std::log(std::tan(radLat) + 1 / std::cos(radLat)) / M_PI) / 2 * n * TILE_SIZE);
-    return {x, y};
-}
-
-static lv_point_t locToCenterOffsetPx(Location loc, Location centerLoc, int zoom) {
-    lv_point_t loc_px = locToPx(loc, zoom);
-    lv_point_t center_px = locToPx(centerLoc, zoom);
-    int screenX = loc_px.x - center_px.x;
-    int screenY = loc_px.y - center_px.y;
-    return {screenX, screenY};
-}
-
-static lv_point_precise_t locToCenterOffsetPPx(Location loc, Location centerLoc, int zoom) {
-    lv_point_precise_t loc_px = locToPPx(loc, zoom);
-    lv_point_precise_t center_px = locToPPx(centerLoc, zoom);
-    lv_value_precise_t screenX = SCREEN_CENTER_X + loc_px.x - center_px.x;
-    lv_value_precise_t screenY = SCREEN_CENTER_Y + loc_px.y - center_px.y;
-    return {screenX, screenY};
-}
-
-static double haversineDistance(Location loc1, Location loc2) {
-    const double R = 6371;
-    double dLat = radians(loc2.lat - loc1.lat);
-    double dLon = radians(loc2.lon - loc1.lon);
-    double a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(radians(loc1.lat)) * cos(radians(loc2.lat)) *
-        sin(dLon / 2) * sin(dLon / 2);
-    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    return R * c;
-}
-
-static Location pxToLoc(lv_point_t pixels, int zoom) {
-    int n = 1 << zoom;
-    float lon = pixels.x / static_cast<float>(n * TILE_SIZE) * 360.0 - 180.0;
-    float lat_rad = std::atan(std::sinh(M_PI * (1 - 2.0 * pixels.y / static_cast<float>(n * TILE_SIZE))));
-    float lat = lat_rad * 180.0 / M_PI;
-    return Location{lon, lat};
-}
-
-static Location pointToLocation(lv_point_t point, Location cursorLoc, int zoom) {
-    lv_point_t centerPixels = locToPx(cursorLoc, zoom);
-    int pixelX = point.x + centerPixels.x - SCREEN_CENTER_X;
-    int pixelY = point.y + centerPixels.y - SCREEN_CENTER_Y;
-    return pxToLoc({pixelX, pixelY}, zoom);
-}
+// proto
+static void onClickAddrList(lv_event_t* lv_event);
 
 static void showSearchDialog(bool visible) {
     if (visible) {
         lv_textarea_set_text(search_field, "");
-        lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(search_field, LV_OBJ_FLAG_HIDDEN);
+        show(keyboard);
+        show(search_field);
         lv_obj_add_state(search_field, LV_STATE_FOCUSED);
     } else {
-        lv_obj_add_flag(search_field, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
-static void showAddrList(bool visible) {
-    if (visible) {
-        lv_obj_remove_flag(lst_addrs, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(lst_addrs, LV_OBJ_FLAG_HIDDEN);
+        hide(search_field);
+        hide(keyboard);
     }
 }
 
 static void showToast(const char* text) {
     lv_label_set_text(toast, text);
-    lv_obj_remove_flag(toast, LV_OBJ_FLAG_HIDDEN);
+    show(toast);
 }
-
-static void hideToast() {
-    lv_obj_add_flag(toast, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void onClickAddrList(lv_event_t* lv_event);
 
 static void searchAddress() {
     showSearchDialog(false);
@@ -205,22 +144,22 @@ static void searchAddress() {
                      foundAddrs.push_back(Address{name, {lon, lat}});
                      return 0;
                  }, (void*)dbData, &zErrMsg);
-    hideToast();
+    hide(toast);
     if (foundAddrs.size() == 0) return;
     for (auto addr : foundAddrs) {
         lv_obj_t* btn = lv_list_add_btn(lst_addrs, NULL, addr.name.c_str());
         lv_obj_add_event_cb(btn, onClickAddrList, LV_EVENT_CLICKED, NULL);
         addr.btn = btn;
     }
-    showAddrList(true);
+    show(lst_addrs);
 }
 
 static void updateMarkers(bool onlyMe = false) {
-    if (marker_me.obj != nullptr && !lv_obj_has_flag(marker_me.obj, LV_OBJ_FLAG_HIDDEN)) {
+    if (marker_me.obj != nullptr && isVisible(marker_me.obj)) {
         marker_me.pos = locToCenterOffsetPx(marker_me.loc, centerLoc, zoom);
         lv_obj_set_pos(marker_me.obj, marker_me.pos.x + MARKER_ME_OX, marker_me.pos.y + MARKER_ME_OY);
     }
-    if (!onlyMe && marker_target.obj != nullptr && !lv_obj_has_flag(marker_target.obj, LV_OBJ_FLAG_HIDDEN)) {
+    if (!onlyMe && marker_target.obj != nullptr && isVisible(marker_target.obj)) {
         marker_target.pos = locToCenterOffsetPx(marker_target.loc, centerLoc, zoom);
         lv_obj_set_pos(marker_target.obj, marker_target.pos.x + MARKER_TARGET_OX, marker_target.pos.y + MARKER_TARGET_OY);
     }
@@ -260,21 +199,21 @@ static void updateMap() {
 
 static void updateButtons() {
     if (zoom <= ZOOM_MIN) {
-        lv_obj_add_state(btn_zoom_out, LV_STATE_DISABLED);
+        disable(btn_zoom_out);
     } else {
-        lv_obj_clear_state(btn_zoom_out, LV_STATE_DISABLED);
+        enable(btn_zoom_out);
     }
 
     if (zoom >= ZOOM_MAX) {
-        lv_obj_add_state(btn_zoom_in, LV_STATE_DISABLED);
+        disable(btn_zoom_in);
     } else {
-        lv_obj_clear_state(btn_zoom_in, LV_STATE_DISABLED);
+        enable(btn_zoom_in);
     }
 
-    if (marker_target.obj != nullptr && lv_obj_has_flag(marker_target.obj, LV_OBJ_FLAG_HIDDEN)) {
-        lv_obj_add_state(btn_route, LV_STATE_DISABLED);
+    if (marker_target.obj != nullptr && isHidden(marker_target.obj)) {
+        disable(btn_route);
     } else {
-        lv_obj_clear_state(btn_route, LV_STATE_DISABLED);
+        enable(btn_route);
     }
 }
 
@@ -299,12 +238,12 @@ static void onDragTile(lv_event_t* e) {
 static void onClickAddrList(lv_event_t* e) {
     auto* btn = static_cast<lv_obj_t*>(lv_event_get_target(e));
     int index = lv_obj_get_index(btn);
-    lv_obj_clear_flag(marker_target.obj, LV_OBJ_FLAG_HIDDEN);
+    show(marker_target.obj);
     const Location newLoc = foundAddrs[index].location;
     LOG("New loc", newLoc.lon, newLoc.lat);
     marker_target.loc = foundAddrs[index].location;
     centerLoc = marker_target.loc;
-    if (foundAddrs.size() == 1) showAddrList(false);
+    if (foundAddrs.size() == 1) hide(lst_addrs);
     updateMap();
     updateMarkers();
     updateRoute();
@@ -328,13 +267,13 @@ static void onClickTile(lv_event_t* e) {
     lv_indev_t* indev = lv_indev_get_act();
     if (indev == nullptr) return;
 
-    if (!lv_obj_has_flag(search_field, LV_OBJ_FLAG_HIDDEN)) {
+    if (isVisible(search_field)) {
         showSearchDialog(false);
         return;
     }
 
-    if (!lv_obj_has_flag(lst_addrs, LV_OBJ_FLAG_HIDDEN)) {
-        showAddrList(false);
+    if (isVisible(lst_addrs)) {
+        hide(lst_addrs);
         return;
     }
 
@@ -348,7 +287,7 @@ static void onClickTile(lv_event_t* e) {
             lv_indev_get_point(lv_indev_get_act(), &point);
             marker_target.loc = pointToLocation(point, centerLoc, zoom);
             LOGF("%.6f, %.6f\n", marker_target.loc.lon, marker_target.loc.lat);
-            lv_obj_clear_flag(marker_target.obj, LV_OBJ_FLAG_HIDDEN);
+            show(marker_target.obj);
             updateMarkers();
             updateButtons();
             break;
@@ -365,14 +304,13 @@ static void onClickGps(lv_event_t* e) {
     updateButtons();
 }
 
-static void onCompassTimer(lv_timer_t* timer) {
+static void onCompassAndGPSTick(lv_timer_t* timer) {
     // todo watch lost connection
-    if (lv_obj_has_flag(marker_me.obj, LV_OBJ_FLAG_HIDDEN)) {
+    if (isHidden(marker_me.obj)) {
         if (my_location.lon != 0) {
             marker_me.loc = my_location;
-            LOG("373:MapUI.cpp GPS found:", my_location.lon, my_location.lat);
-            lv_obj_remove_flag(marker_me.obj, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_state(btn_gps, LV_STATE_DISABLED);
+            show(marker_me.obj);
+            enable(btn_gps);
             onClickGps(nullptr);
         }
     } else {
@@ -384,7 +322,7 @@ static void onCompassTimer(lv_timer_t* timer) {
 }
 
 static void onClickRoute(lv_event_t* e) {
-    showAddrList(false);
+    hide(lst_addrs);
     showToast("Calculating route.\nPlease wait...");
     lv_timer_create([](lv_timer_t* timer) -> void {
         writeBootState({CURRENT_BM_VER, ModeRoute, centerLoc, zoom, marker_me.loc, marker_target.loc});
@@ -393,8 +331,11 @@ static void onClickRoute(lv_event_t* e) {
 }
 
 static void onClickSearch(lv_event_t* e) {
-    showAddrList(false);
+    hide(lst_addrs);
     showSearchDialog(true);
+}
+
+static void onClickMirror(lv_event_t* e) {
 }
 
 static void onStartSearch(lv_event_t* e) {
@@ -406,22 +347,11 @@ static void onStartSearch(lv_event_t* e) {
     }, 100, NULL);
 }
 
-static lv_obj_t* createBtn(const char* label, const int32_t x, const int32_t y, const lv_event_cb_t onClick, const int32_t w = 40, const int32_t h = 40) {
-    lv_obj_t* btn = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn, w, h);
-    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, x, y);
-    lv_obj_t* zoom_in_label = lv_label_create(btn);
-    lv_label_set_text(zoom_in_label, label);
-    lv_obj_center(zoom_in_label);
-    lv_obj_add_event_cb(btn, onClick, LV_EVENT_CLICKED, NULL);
-    return btn;
-}
-
 static void createRoute() {
     static lv_style_t style_line;
     lv_style_init(&style_line);
     lv_style_set_line_width(&style_line, 5);
-    lv_style_set_line_color(&style_line, lv_palette_main(LV_PALETTE_BLUE));
+    lv_style_set_line_color(&style_line, lv_palette_main(LV_PALETTE_ORANGE));
     lv_style_set_line_opa(&style_line, 150);
     lv_style_set_line_rounded(&style_line, true);
 
@@ -465,14 +395,14 @@ static void createMap() {
 
 static void createButtons() {
     int x = 10, y = 10, step = 50;
-    btn_zoom_in = createBtn(LV_SYMBOL_PLUS, x, y, onClickZoom);
+    btn_zoom_in = createBtn(SYMBOL_ZOOM_IN, x, y, onClickZoom);
     y += step;
-    btn_zoom_out = createBtn(LV_SYMBOL_MINUS, x, y, onClickZoom);
+    btn_zoom_out = createBtn(SYMBOL_ZOOM_OUT, x, y, onClickZoom);
     y += step;
-    btn_gps = createBtn(LV_SYMBOL_GPS, x, y, onClickGps);
-    lv_obj_add_state(btn_gps, LV_STATE_DISABLED);
+    btn_gps = createBtn(SYMBOL_GPS_OFF, x, y, onClickGps);
+    disable(btn_gps);
     y += step;
-    btn_route = createBtn(LV_SYMBOL_SHUFFLE, x, y, onClickRoute);
+    btn_route = createBtn(SYMBOL_ROUTE, x, y, onClickRoute);
     if (distance > 0) {
         String distanceText = String(distance, 1);
         lbl_dist = lv_label_create(btn_route);
@@ -481,21 +411,23 @@ static void createButtons() {
         lv_obj_align(lbl_dist, LV_ALIGN_BOTTOM_MID, 0, 9);
     }
     y += step;
-    btn_search = createBtn(LV_SYMBOL_HOME, x, y, onClickSearch);
+    btn_search = createBtn(SYMBOL_SEARCH, x, y, onClickSearch);
+    y += step;
+    btn_search = createBtn(SYMBOL_MIRROR, x, y, onClickMirror);
 }
 
 static void createMarkers(Location me, Location target) {
     const auto img1 = lv_img_create(lv_scr_act());
     lv_image_set_src(img1, &compass);
     lv_obj_center(img1);
-    if (my_location.lat == 0.0) lv_obj_add_flag(img1, LV_OBJ_FLAG_HIDDEN);
+    if (my_location.lat == 0.0) hide(img1);
     Location myLoc = me.lat != 0.0 ? me : centerLoc;
     marker_me = {img1, myLoc, locToCenterOffsetPx(myLoc, centerLoc, zoom)};
 
     const auto img2 = lv_img_create(lv_scr_act());
     lv_image_set_src(img2, &marker);
     lv_obj_center(img2);
-    if (target.lat == 0.0) lv_obj_add_flag(img2, LV_OBJ_FLAG_HIDDEN);
+    if (target.lat == 0.0) hide(img2);
     marker_target = {img2, target, {0, 0}};
 }
 
@@ -510,7 +442,7 @@ static void createToast() {
     lv_obj_set_style_text_color(toast, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_radius(toast, 6, 0);
 
-    hideToast();
+    hide(toast);
 }
 
 static void createKeyboard() {
@@ -545,7 +477,7 @@ static void createKeyboard() {
 static void createAddrList() {
     lst_addrs = lv_list_create(lv_screen_active());
     lv_obj_center(lst_addrs);
-    lv_obj_add_flag(lst_addrs, LV_OBJ_FLAG_HIDDEN);
+    hide(lst_addrs);
     lv_obj_set_style_text_font(lst_addrs, &montserrat_14_pl, 0);
     lv_obj_set_width(lst_addrs,LV_HOR_RES - 20);
     lv_obj_set_height(lst_addrs, LV_SIZE_CONTENT);
@@ -609,7 +541,7 @@ void Map_init(const BootState& state) {
     updateRoute();
     updateButtons();
 
-    lv_timer_create(onCompassTimer, COMPASS_UPD_PERIOD, NULL);
+    lv_timer_create(onCompassAndGPSTick, COMPASS_UPD_PERIOD, NULL);
 
     LOG(" ok");
 }
