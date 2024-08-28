@@ -49,7 +49,8 @@ extern Location my_location;
 
 /// --- timing
 #define COMPASS_UPD_PERIOD 100
-#define GPS_UPD_SKIPS 20
+#define COMPASS_UPD_SKIPS 200
+#define GPS_UPD_SKIPS 2000
 
 /// remote
 #define IMAGE_CAPTURE_URL "http://192.168.4.1/jpg"

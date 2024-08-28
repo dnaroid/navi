@@ -27,27 +27,32 @@ static PathFinder pf;
 
 auto spiShared = SPIClass(HSPI);
 int gpsSkips = 0;
+int compassSkips = 0;
 
 void updateCompassAndGPS(void* pvParameters) {
   while (true) {
-#ifndef DISABLE_COMPASS
-    compass.read();
-    compass_angle = compass.heading();
-#endif
-#ifndef DISABLE_GPS
-    if (gpsSkips++ < GPS_UPD_SKIPS) continue;
-    while (gpsSerial.available() > 0) {
-      gps.encode(gpsSerial.read());
+    if (compassSkips++ > COMPASS_UPD_SKIPS) {
+      compass.read();
+      compass_angle = compass.heading();
+      compassSkips = 0;
     }
-    if (gps.location.isUpdated()) {
-      float gpsLat = gps.location.lat();
-      float gpsLon = gps.location.lng();
-      my_location.lat = gpsLat;
-      my_location.lon = gpsLon;
+
+    if (gpsSkips++ > GPS_UPD_SKIPS) {
+      while (gpsSerial.available() > 0) {
+        gps.encode(gpsSerial.read());
+      }
+      if (gps.location.isUpdated()) {
+        float gpsLat = gps.location.lat();
+        float gpsLon = gps.location.lng();
+        my_location.lat = gpsLat;
+        my_location.lon = gpsLon;
+      }
+      gpsSkips = 0;
     }
-    gpsSkips = 0;
-#endif
-    delay(COMPASS_UPD_PERIOD);
+
+    ServerLoop();
+
+    delay(1);
   }
 }
 
@@ -55,11 +60,6 @@ void setup() {
   START_SERIAL
 
   btStop(); // Bluetooth OFF
-
-#ifndef DISABLE_SERVER
-  WiFi.persistent(false);
-  ServerSetup();
-#endif
 
   LOGI("Init Card reader");
   spiShared.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
@@ -80,6 +80,10 @@ void setup() {
 
   switch (mode) {
   case ModeMap:
+
+    WiFi.persistent(false);
+    ServerSetup();
+
     Wire.begin(I2C_SDA, I2C_SCL, 0);
     delay(100);
 
@@ -87,21 +91,18 @@ void setup() {
 
     Touch_init();
 
-#ifndef DISABLE_COMPASS
     LOGI("Init Compass");
     compass.init();
     compass.enableDefault();
     compass.m_min = (LSM303::vector<int16_t>){-686, -545, -4};
     compass.m_max = (LSM303::vector<int16_t>){+331, +353, +4};
     LOG(" ok");
-#endif
-#ifndef DISABLE_GPS
+
     LOGI("Init GPS");
     gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
     LOG(" ok");
-#endif
 
-    Map_init(state);
+  // Map_init(state);
 
     xTaskCreatePinnedToCore(updateCompassAndGPS, "UpdateTask", 4096, NULL, 1, NULL, 1);
 
