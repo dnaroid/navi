@@ -2,6 +2,7 @@
 #include <SD.h>
 #include <secrets.h>
 #include <SPI.h>
+#include <TFT_eSPI.h>
 #include <Wire.h>
 #include "WiFi.h"
 #include "LSM303.h"
@@ -81,9 +82,6 @@ void setup() {
   switch (mode) {
   case ModeMap:
 
-    WiFi.persistent(false);
-    ServerSetup();
-
     Wire.begin(I2C_SDA, I2C_SCL, 0);
     delay(100);
 
@@ -102,7 +100,7 @@ void setup() {
     gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
     LOG(" ok");
 
-  // Map_init(state);
+    Map_init(state);
 
     xTaskCreatePinnedToCore(updateCompassAndGPS, "UpdateTask", 4096, NULL, 1, NULL, 1);
 
@@ -118,6 +116,12 @@ void setup() {
     break;
 
   case ModeMirror:
+    ServerSetup();
+    auto tft = TFT_eSPI();
+    tft.begin();
+    tft.initDMA();
+    tft.invertDisplay(true);
+
     break;
   }
 
@@ -127,13 +131,10 @@ void setup() {
 void loop() {
   if (mode == ModeMap) {
     lv_timer_handler();
-    lv_tick_inc(10);
-    delay(10);
+    // lv_tick_inc(10);
+    // delay(10);
   } else if (mode == ModeRoute) {
   } else if (mode == ModeMirror) {
+    ServerLoop();
   }
-
-#ifndef DISABLE_SERVER
-  ServerLoop();
-#endif
 }
