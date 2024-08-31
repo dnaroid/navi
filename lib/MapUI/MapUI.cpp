@@ -18,8 +18,6 @@ static int DEBUG_VALUE_1 = 0;
 static int DEBUG_VALUE_2 = 0;
 #endif
 
-#define TIMER_PERIOD 100
-
 LV_IMG_DECLARE(marker)
 LV_IMG_DECLARE(compass)
 LV_FONT_DECLARE(montserrat_14_pl)
@@ -33,7 +31,9 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define SYMBOL_MIRROR   "6"
 #define SYMBOL_EXIT     "7"
 
+#define TIMER_PERIOD 100
 #define DRAG_THRESHOLD 10
+#define HOLD_TIME_THRESHOLD 20
 #define FILE_NAME_SIZE 40
 #define MARKERS_OPACITY 180
 #define MARKER_TARGET_OX (0)
@@ -46,7 +46,8 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define PRIMARY_COLOR lv_color_hex(0x2196F3)
 #define TOAST_COLOR lv_color_hex(0xFF5722)
 
-extern int camNum;
+extern int camWSnumber;
+extern bool camEnabled;
 
 struct UICommand {
     const char* command;
@@ -104,6 +105,9 @@ static lv_point_precise_t* route_px;
 static std::vector<Tile> tiles;
 static std::vector<Location> route = {};
 static float distance = -1;
+
+static lv_timer_t* hold_timer = nullptr;
+static bool is_hold_valid = false;
 
 // proto
 static void onClickAddrList(lv_event_t* lv_event);
@@ -177,13 +181,13 @@ static void updateRoute() {
     lv_line_set_points(line_route, route_px, idx);
 }
 
-static void updateMap() {
+static void updateMap(const bool force = false) {
     lv_point_t centerPx = locToPx(centerLoc, zoom);
     int tile_x = centerPx.x / TILE_SIZE;
     int tile_y = centerPx.y / TILE_SIZE;
     int x_offset = centerPx.x % TILE_SIZE;
     int y_offset = centerPx.y % TILE_SIZE;
-    bool changedTile = tiles[0].tile_x != tile_x || tiles[0].tile_y != tile_y || tiles[0].zoom != zoom;
+    bool changedTile = tiles[0].tile_x != tile_x || tiles[0].tile_y != tile_y || tiles[0].zoom != zoom || force;
 
     for (auto& t : tiles) {
         t.x = SCREEN_CENTER_X + t.tile_ox * TILE_SIZE - x_offset;
@@ -267,6 +271,7 @@ static void onClickZoom(lv_event_t* e) {
 }
 
 static void onClickTile(lv_event_t* e) {
+    lv_event_code_t code = lv_event_get_code(e);
     lv_indev_t* indev = lv_indev_get_act();
     if (indev == nullptr) return;
 
@@ -280,20 +285,36 @@ static void onClickTile(lv_event_t* e) {
         return;
     }
 
-    lv_point_t vect;
-    lv_indev_get_vect(indev, &vect);
-    if (abs(vect.x) > DRAG_THRESHOLD || abs(vect.y) > DRAG_THRESHOLD) { return; }
-    const auto* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
-    for (auto& t : tiles) {
-        if (t.obj == obj) {
-            lv_point_t point;
-            lv_indev_get_point(lv_indev_get_act(), &point);
-            marker_target.loc = pointToLocation(point, centerLoc, zoom);
-            LOGF("%.6f, %.6f\n", marker_target.loc.lon, marker_target.loc.lat);
-            show(marker_target.obj);
-            updateMarkers();
-            updateButtons();
-            break;
+    if (code == LV_EVENT_PRESSED) {
+        is_hold_valid = false;
+        hold_timer = lv_timer_create([](lv_timer_t* timer)-> void {
+            is_hold_valid = true;
+        }, HOLD_TIME_THRESHOLD, NULL);
+    } else if (code == LV_EVENT_RELEASED) {
+        if (hold_timer) {
+            lv_timer_del(hold_timer);
+            hold_timer = nullptr;
+        }
+
+        if (!is_hold_valid) return;
+
+        lv_point_t vect;
+        lv_indev_get_vect(indev, &vect);
+        if (abs(vect.x) > DRAG_THRESHOLD || abs(vect.y) > DRAG_THRESHOLD) return; // drag detected
+
+
+        const auto* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
+        for (auto& t : tiles) {
+            if (t.obj == obj) {
+                lv_point_t point;
+                lv_indev_get_point(lv_indev_get_act(), &point);
+                marker_target.loc = pointToLocation(point, centerLoc, zoom);
+                LOGF("%.6f, %.6f\n", marker_target.loc.lon, marker_target.loc.lat);
+                show(marker_target.obj);
+                updateMarkers();
+                updateButtons();
+                break;
+            }
         }
     }
 }
@@ -322,12 +343,9 @@ static void onTimerTick(lv_timer_t* timer) {
         lv_image_set_rotation(marker_me.obj, angle_fixed);
         updateMarkers(true);
     }
-
-    if (camNum == -1 && enabled(btn_mirror)) {
-        disable(btn_mirror);
-        updateMap();
-    };
-    if (camNum != -1 && disabled(btn_mirror)) enable(btn_mirror);
+    if (camEnabled && camWSnumber == -1) {
+        //todo: show spinner
+    }
 }
 
 static void onClickRoute(lv_event_t* e) {
@@ -345,8 +363,17 @@ static void onClickSearch(lv_event_t* e) {
 }
 
 static void onClickMirror(lv_event_t* e) {
-    Mirror_toggle();
-    updateMap();
+    if (camEnabled) {
+        Mirror_stop();
+        lv_obj_remove_state(btn_mirror, LV_STATE_PRESSED);
+        lv_timer_create([](lv_timer_t* timer) -> void {
+            updateMap(true);
+            lv_timer_del(timer);
+        }, 500, NULL);
+    } else {
+        Mirror_start();
+        lv_obj_add_state(btn_mirror, LV_STATE_PRESSED);
+    }
 }
 
 static void onStartSearch(lv_event_t* e) {
@@ -398,7 +425,8 @@ static void createMap() {
             lv_obj_align(t.obj, LV_ALIGN_TOP_LEFT, 0, 0);
             lv_obj_add_flag(t.obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_add_event_cb(t.obj, onDragTile, LV_EVENT_PRESSING, NULL);
-            lv_obj_add_event_cb(t.obj, onClickTile, LV_EVENT_CLICKED, NULL);
+            lv_obj_add_event_cb(t.obj, onClickTile, LV_EVENT_PRESSED, NULL);
+            lv_obj_add_event_cb(t.obj, onClickTile, LV_EVENT_RELEASED, NULL);
             tiles.push_back(t);
         }
     }

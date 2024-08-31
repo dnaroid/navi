@@ -57,7 +57,7 @@ public:
     }
 
     int init() {
-        LOG("56:PathFinder.h init:");
+        LOG("PathFinder.h init:");
         sqlite3_initialize();
         sqlite3* db;
         sqlite3_stmt* stmt;
@@ -79,7 +79,7 @@ public:
 
         if (sqlite3_step(stmt) == SQLITE_ROW) {
             nodesCount = sqlite3_column_int(stmt, 0);
-            LOG("81:PathFinder.h MAX_NODES:", nodesCount);
+            LOG("PathFinder.h MAX_NODES:", nodesCount);
         } else {
             LOG("Failed to fetch node count.");
             sqlite3_finalize(stmt);
@@ -89,13 +89,13 @@ public:
         sqlite3_finalize(stmt);
 
         nodes = new Node[nodesCount];
-        LOG("93:PathFinder.h nodes");
+        LOG("PathFinder.h nodes");
         previous = new int[nodesCount];
-        LOG("95:PathFinder.h previous");
+        LOG("PathFinder.h previous");
         distances = new int[nodesCount];
-        LOG("97:PathFinder.h distances");
+        LOG("PathFinder.h distances");
         graph.resize(nodesCount);
-        LOG("99:PathFinder.h graph");
+        LOG("PathFinder.h graph");
 
         const auto nodeQuery = "SELECT id, x, y FROM nodes";
         rc = sqlite3_prepare_v2(db, nodeQuery, -1, &stmt, nullptr);
@@ -130,7 +130,7 @@ public:
         }
         sqlite3_finalize(stmt);
         sqlite3_close(db);
-        LOG("130:PathFinder.h graph loaded");
+        LOG("PathFinder.h graph loaded");
 
         LOG("Init ok");
         return SQLITE_OK;
@@ -139,9 +139,9 @@ public:
     int findPath(const Location start, const Location end) {
         size_t freeMemory = heap_caps_get_free_size(MALLOC_CAP_8BIT);
         pathCenter = end;
-        LOG("62:PathFinder.h free_memory:", freeMemory);
+        LOG("PathFinder.h free_memory:", freeMemory);
         memoryLimit = freeMemory - 50 * 1024;
-        LOG("138:PathFinder.h memoryLimit:", memoryLimit);
+        LOG("PathFinder.h memoryLimit:", memoryLimit);
 
         const int startNode = findNearestNode(start);
         const int endNode = findNearestNode(end);
@@ -219,7 +219,8 @@ public:
     }
 
     void calculateMapCenterAndZoom() {
-        float tileSize = 0.1f;
+        const int WORLD_DIM = 256;
+
         if (path.empty()) return;
 
         float minLon = std::numeric_limits<float>::max();
@@ -239,31 +240,25 @@ public:
             .lat = (minLat + maxLat) / 2.0f,
         };
 
-        float pathWidth = maxLon - minLon;
-        float pathHeight = maxLat - minLat;
-
-        // Рассчитайте максимальный размер в градусах, который нужно уместить на экран
-        float maxSizeInDegrees = std::max(pathWidth, pathHeight);
-
-        // Рассчитайте количество пикселей на градус на текущем уровне зума
-        auto degreesPerTile = [&](int zoomLevel) -> float {
-            return tileSize / (1 << zoomLevel);
+        auto latRad = [](float lat) -> float {
+            float sin = std::sin(lat * M_PI / 180.0f);
+            double radX2 = std::log((1 + sin) / (1 - sin)) / 2;
+            return std::max(std::min(radX2, M_PI), -M_PI) / 2;
         };
 
-        zoom = ZOOM_MIN;
+        auto zoom_lambda = [](float mapPx, float worldPx, float fraction) -> int {
+            return std::floor(std::log(mapPx / worldPx / fraction) / M_LN2);
+        };
 
-        // Проверяем от ZOOM_MAX до ZOOM_MIN, чтобы найти минимальный зум, который умещает весь маршрут на экране
-        for (int currentZoom = ZOOM_MIN; currentZoom <= ZOOM_MAX; ++currentZoom) {
-            float degreesPerPixel = degreesPerTile(currentZoom) / tileSize;
-            float screenWidthInDegrees = SCREEN_WIDTH * degreesPerPixel;
-            float screenHeightInDegrees = SCREEN_HEIGHT * degreesPerPixel;
+        float latFraction = (latRad(maxLat) - latRad(minLat)) / M_PI;
+        float lngDiff = maxLon - minLon;
+        float lngFraction = ((lngDiff < 0) ? (lngDiff + 360.0f) : lngDiff) / 360.0f;
 
-            if (maxSizeInDegrees <= std::min(screenWidthInDegrees, screenHeightInDegrees)) {
-                zoom = currentZoom;
-            } else {
-                break;
-            }
-        }
+        int latZoom = zoom_lambda(SCREEN_HEIGHT, WORLD_DIM, latFraction);
+        int lngZoom = zoom_lambda(SCREEN_WIDTH, WORLD_DIM, lngFraction);
+
+        zoom = std::min(latZoom, lngZoom);
+        zoom = std::min(zoom, ZOOM_MAX);
     }
 };
 

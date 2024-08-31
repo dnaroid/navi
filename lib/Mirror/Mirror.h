@@ -5,7 +5,6 @@
 void Mirror_init();
 void Mirror_start();
 void Mirror_stop();
-void Mirror_toggle();
 void Mirror_loop();
 
 #endif //MIRROR_H

@@ -100,11 +100,6 @@ void setup() {
     gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
     LOG(" ok");
 
-    LOGI("Init Cam");
-    Mirror_init();
-    Mirror_stop();
-    LOG(" ok");
-
     Map_init(state);
 
     xTaskCreatePinnedToCore(updateCompassAndGPS, "UpdateTask", 4096, NULL, 1, NULL, 1);
