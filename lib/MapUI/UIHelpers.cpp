@@ -5,11 +5,11 @@ LV_FONT_DECLARE(icons)
 
 // --- syntax sugar ---
 
-bool isHidden(const lv_obj_t* obj) {
+bool hidden(const lv_obj_t* obj) {
   return lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN);
 }
 
-bool isVisible(const lv_obj_t* obj) {
+bool visible(const lv_obj_t* obj) {
   return !lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -21,8 +21,12 @@ void show(lv_obj_t* obj) {
   lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
 }
 
-bool isDisabled(const lv_obj_t* obj) {
+bool disabled(const lv_obj_t* obj) {
   return lv_obj_has_state(obj, LV_STATE_DISABLED);
+}
+
+bool enabled(const lv_obj_t* obj) {
+  return !lv_obj_has_state(obj, LV_STATE_DISABLED);
 }
 
 void disable(lv_obj_t* obj) {

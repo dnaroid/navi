@@ -1,5 +1,3 @@
-#include <esp_bt.h>
-#include <esp_bt_main.h>
 #include <PathFinder.h>
 #include <SD.h>
 #include <SPI.h>
@@ -13,7 +11,6 @@
 #include "Mirror.h"
 #include "BootManager.h"
 #include "TinyGPSPlus.h"
-#include <TJpg_Decoder.h>
 
 #include "../lv_conf.h"
 
@@ -24,6 +21,8 @@ Location my_location = {0, 0};
 TinyGPSPlus gps;
 LSM303 compass;
 HardwareSerial gpsSerial(1);
+
+SemaphoreHandle_t xGuiSemaphore;
 
 static BootState state;
 static Mode mode = ModeMap;
@@ -53,30 +52,13 @@ void updateCompassAndGPS(void* pvParameters) {
       }
       gpsSkips = 0;
     }
-
     Mirror_loop();
+    delay(10);
   }
 }
-
-void disableBluetooth() {
-  if (esp_bluedroid_disable() == ESP_OK) {
-    Serial.println("Bluetooth stack disabled");
-  } else {
-    Serial.println("Failed to disable Bluetooth stack");
-  }
-
-  if (esp_bt_controller_disable() == ESP_OK) {
-    Serial.println("Bluetooth controller disabled");
-  } else {
-    Serial.println("Failed to disable Bluetooth controller");
-  }
-}
-
 
 void setup() {
   START_SERIAL
-
-  disableBluetooth();
 
   LOGI("Init Card reader");
   spiShared.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
@@ -98,6 +80,8 @@ void setup() {
   switch (mode) {
   case ModeMap:
 
+    xGuiSemaphore = xSemaphoreCreateMutex();
+
     Wire.begin(I2C_SDA, I2C_SCL, 0);
     delay(100);
 
@@ -116,12 +100,12 @@ void setup() {
     gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
     LOG(" ok");
 
-  // Map_init(state);
-
     LOGI("Init Cam");
     Mirror_init();
-    Mirror_start();
+    Mirror_stop();
     LOG(" ok");
+
+    Map_init(state);
 
     xTaskCreatePinnedToCore(updateCompassAndGPS, "UpdateTask", 4096, NULL, 1, NULL, 1);
 
@@ -134,13 +118,8 @@ void setup() {
     pf.calculateMapCenterAndZoom();
     writeBootState({CURRENT_BM_VER, ModeMap, pf.pathCenter, pf.zoom, state.start, state.end, pf.path, pf.distance});
     esp_restart();
-    break;
 
   case ModeMirror:
-    // auto tft = TFT_eSPI();
-    // tft.begin();
-    // tft.initDMA();
-    // tft.invertDisplay(true);
 
     break;
   }
@@ -150,7 +129,10 @@ void setup() {
 
 void loop() {
   if (mode == ModeMap) {
-    lv_timer_handler();
+    if (xSemaphoreTake(xGuiSemaphore, portMAX_DELAY) == pdTRUE) {
+      lv_timer_handler();
+      xSemaphoreGive(xGuiSemaphore);
+    }
   } else if (mode == ModeRoute) {
   } else if (mode == ModeMirror) {
   }
