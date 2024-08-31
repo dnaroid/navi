@@ -1,5 +1,6 @@
 #include "globals.h"
 #include "lvgl.h"
+
 LV_FONT_DECLARE(icons)
 
 // --- syntax sugar ---
@@ -104,3 +105,16 @@ Location pointToLocation(lv_point_t point, Location cursorLoc, int zoom) {
   return pxToLoc({pixelX, pixelY}, zoom);
 }
 
+// HTTPClient http;
+// http.begin(url);
+//
+// int httpCode = http.GET();
+// if (httpCode == HTTP_CODE_OK) {
+//   WiFiClient* stream = http.getStreamPtr();
+//   TJpgDec.setJpgScale(1);
+//   TJpgDec.setSwapBytes(true);
+//   TJpgDec.setCallback(SketchCallback(tft_output));
+//   TJpgDec.drawJpg(0, 0, *stream, http.getSize());
+// }
+//
+// http.end();

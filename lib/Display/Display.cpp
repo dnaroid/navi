@@ -23,7 +23,7 @@ void Display_init() {
 
   lv_init();
 
-  size_t buffer_pixel_count = (SCREEN_WIDTH * SCREEN_HEIGHT) / 2;
+  size_t buffer_pixel_count = (SCREEN_WIDTH * SCREEN_HEIGHT) / 5;
   size_t buffer_size = buffer_pixel_count * sizeof(lv_color_t);
 
   auto* buf1 = static_cast<lv_color_t*>(heap_caps_malloc(buffer_size, MALLOC_CAP_DMA));

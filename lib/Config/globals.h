@@ -5,6 +5,12 @@
 
 #define LV_LVGL_H_INCLUDE_SIMPLE
 
+#define WIFI_SSID "ESP32-SCOOTER"
+#define WIFI_PASSWORD "UoAcYyo5FErnjXk"
+
+#define INIT_LAT 54.393330
+#define INIT_LON 18.620926
+
 struct Location {
   float lon;
   float lat;
@@ -14,11 +20,6 @@ extern float compass_angle;
 extern Location my_location;
 
 #define INIT_ZOOM 16
-
-/// --- features disabling
-#define DISABLE_SERVER
-// #define DISABLE_COMPASS
-// #define DISABLE_GPS
 
 /// --- pins
 #define SD_CS    7
@@ -48,9 +49,8 @@ extern Location my_location;
 #define COMPASS_MAGNETIC_DECLINATION_M 43
 
 /// --- timing
-#define COMPASS_UPD_PERIOD 100
-#define COMPASS_UPD_SKIPS 200
-#define GPS_UPD_SKIPS 2000
+#define COMPASS_UPD_SKIPS 2
+#define GPS_UPD_SKIPS 100
 
 /// remote
 #define IMAGE_CAPTURE_URL "http://192.168.4.1/jpg"

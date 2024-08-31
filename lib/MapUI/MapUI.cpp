@@ -2,12 +2,19 @@
 #include "globals.h"
 #include "lvgl.h"
 #include <BootManager.h>
+#include <HTTPClient.h>
+#include <secrets.h>
 #include <sqlite3.h>
+#include <TJpg_Decoder.h>
 #include <vector>
+#include <WiFiMulti.h>
+
 #include "montserrat_14_pl.c"
 #include "marker.c"
 #include "compass.c"
 #include "UIhelpers.cpp"
+
+// WiFiMulti wifi;
 
 #define DEBUG_MAP 0
 #if DEBUG_MAP == 1
@@ -16,6 +23,10 @@ static int DEBUG_VALUE_1 = 0;
 static int DEBUG_VALUE_2 = 0;
 #endif
 
+#define TIMER_PERIOD 100
+
+LV_IMG_DECLARE(marker)
+LV_IMG_DECLARE(compass)
 LV_FONT_DECLARE(montserrat_14_pl)
 
 #define SYMBOL_ZOOM_IN  "0"
@@ -27,9 +38,6 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define SYMBOL_MIRROR   "6"
 #define SYMBOL_EXIT     "7"
 
-LV_IMG_DECLARE(marker)
-LV_IMG_DECLARE(compass)
-
 #define DRAG_THRESHOLD 10
 #define FILE_NAME_SIZE 40
 #define MARKERS_OPACITY 180
@@ -38,8 +46,7 @@ LV_IMG_DECLARE(compass)
 #define MARKER_ME_OX (0)
 #define MARKER_ME_OY (0)
 #define ADDR_SEARCH_LIMIT 5
-// first tile should be central!
-#define TILES_X_SCAN {0,-1,1}
+#define TILES_X_SCAN {0,-1,1} // first tile should be central!
 #define TILES_Y_SCAN {0,-1,1}
 #define PRIMARY_COLOR lv_color_hex(0x2196F3)
 #define TOAST_COLOR lv_color_hex(0xFF5722)
@@ -93,6 +100,17 @@ static lv_obj_t* search_field;
 static lv_obj_t* toast;
 static lv_obj_t* lst_addrs;
 static lv_obj_t* lbl_dist;
+lv_obj_t* mirror_img;
+lv_img_dsc_t img_dsc = {
+    {
+        .magic = LV_IMAGE_HEADER_MAGIC,
+        .cf = LV_COLOR_FORMAT_RGB565,
+        .w = 160,
+        .h = 120,
+    },
+    .data_size = 160 * 120 * 2,
+    .data = nullptr,
+};
 static Marker marker_me;
 static Marker marker_target;
 static lv_point_precise_t* route_px;
@@ -104,6 +122,33 @@ static float distance = -1;
 
 // proto
 static void onClickAddrList(lv_event_t* lv_event);
+
+
+bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) {
+    img_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+    img_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
+    img_dsc.header.w = w;
+    img_dsc.header.h = h;
+    img_dsc.data = (const uint8_t*)bitmap;
+    img_dsc.data_size = w * h * 2;
+    lv_img_set_src(mirror_img, &img_dsc);
+    return true;
+}
+
+void loadAndDisplayImage() {
+    HTTPClient http;
+    if (http.begin("http://192.168.4.1/jpg")) {
+        const int httpCode = http.GET();
+        if (httpCode == HTTP_CODE_OK) {
+            TJpgDec.drawJpg(0, 0, reinterpret_cast<const uint8_t*>(http.getString().c_str()), http.getSize());
+        } else {
+            LOG("Failed to get image, error: ", http.errorToString(httpCode).c_str());
+        }
+        http.end();
+    } else {
+        LOG("Failed to initialize HTTPClient");
+    }
+}
 
 static void showSearchDialog(bool visible) {
     if (visible) {
@@ -304,7 +349,7 @@ static void onClickGps(lv_event_t* e) {
     updateButtons();
 }
 
-static void onCompassAndGPSTick(lv_timer_t* timer) {
+static void onTimerTick(lv_timer_t* timer) {
     // todo watch lost connection
     if (isHidden(marker_me.obj)) {
         if (my_location.lon != 0) {
@@ -319,6 +364,7 @@ static void onCompassAndGPSTick(lv_timer_t* timer) {
         lv_image_set_rotation(marker_me.obj, angle_fixed);
         updateMarkers(true);
     }
+    loadAndDisplayImage();
 }
 
 static void onClickRoute(lv_event_t* e) {
@@ -413,7 +459,7 @@ static void createButtons() {
     y += step;
     btn_search = createBtn(SYMBOL_SEARCH, x, y, onClickSearch);
     y += step;
-    btn_search = createBtn(SYMBOL_MIRROR, x, y, onClickMirror);
+    btn_mirror = createBtn(SYMBOL_MIRROR, x, y, onClickMirror);
 }
 
 static void createMarkers(Location me, Location target) {
@@ -429,6 +475,14 @@ static void createMarkers(Location me, Location target) {
     lv_obj_center(img2);
     if (target.lat == 0.0) hide(img2);
     marker_target = {img2, target, {0, 0}};
+}
+
+static void createMirror() {
+    mirror_img = lv_img_create(lv_scr_act());
+    lv_obj_set_size(mirror_img, 160, 120);
+    // lv_image_set_scale(mirror_img, 1);
+    lv_obj_center(mirror_img);
+    // lv_obj_align(mirror_img, LV_ALIGN_CENTER, 0, 0);
 }
 
 static void createToast() {
@@ -535,13 +589,25 @@ void Map_init(const BootState& state) {
     createKeyboard();
     createToast();
     createAddrList();
+    createMirror();
 
     updateMap();
     updateMarkers();
     updateRoute();
     updateButtons();
 
-    lv_timer_create(onCompassAndGPSTick, COMPASS_UPD_PERIOD, NULL);
+    // TJpgDec.setJpgScale(1);
+    // TJpgDec.setSwapBytes(true);
+    // TJpgDec.setCallback(tft_output);
+
+    // wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
+    // while (wifi.run() != WL_CONNECTED) {
+    //     delay(100);
+    //     LOGI(".");
+    // }
+    // loadAndDisplayImage();
+
+    lv_timer_create(onTimerTick, TIMER_PERIOD, NULL);
 
     LOG(" ok");
 }

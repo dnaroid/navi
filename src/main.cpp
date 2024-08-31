@@ -1,17 +1,20 @@
+#include <esp_bt.h>
+#include <esp_bt_main.h>
 #include <PathFinder.h>
 #include <SD.h>
-#include <secrets.h>
 #include <SPI.h>
 #include <TFT_eSPI.h>
 #include <Wire.h>
-#include "WiFi.h"
 #include "LSM303.h"
 #include "lvgl.h"
 #include "MapUI.h"
 #include "Touch.h"
 #include "Display.h"
+#include "Mirror.h"
 #include "BootManager.h"
 #include "TinyGPSPlus.h"
+#include <TJpg_Decoder.h>
+
 #include "../lv_conf.h"
 
 // global
@@ -51,20 +54,33 @@ void updateCompassAndGPS(void* pvParameters) {
       gpsSkips = 0;
     }
 
-    ServerLoop();
-
-    delay(1);
+    Mirror_loop();
   }
 }
+
+void disableBluetooth() {
+  if (esp_bluedroid_disable() == ESP_OK) {
+    Serial.println("Bluetooth stack disabled");
+  } else {
+    Serial.println("Failed to disable Bluetooth stack");
+  }
+
+  if (esp_bt_controller_disable() == ESP_OK) {
+    Serial.println("Bluetooth controller disabled");
+  } else {
+    Serial.println("Failed to disable Bluetooth controller");
+  }
+}
+
 
 void setup() {
   START_SERIAL
 
-  btStop(); // Bluetooth OFF
+  disableBluetooth();
 
   LOGI("Init Card reader");
   spiShared.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  while (!SD.begin(SD_CS, spiShared, 70000000, "/sd", 10)) {
+  while (!SD.begin(SD_CS, spiShared, 80000000, "/sd", 10)) {
     delay(100);
     LOGI(".");
   }
@@ -100,7 +116,12 @@ void setup() {
     gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
     LOG(" ok");
 
-    Map_init(state);
+  // Map_init(state);
+
+    LOGI("Init Cam");
+    Mirror_init();
+    Mirror_start();
+    LOG(" ok");
 
     xTaskCreatePinnedToCore(updateCompassAndGPS, "UpdateTask", 4096, NULL, 1, NULL, 1);
 
@@ -116,11 +137,10 @@ void setup() {
     break;
 
   case ModeMirror:
-    ServerSetup();
-    auto tft = TFT_eSPI();
-    tft.begin();
-    tft.initDMA();
-    tft.invertDisplay(true);
+    // auto tft = TFT_eSPI();
+    // tft.begin();
+    // tft.initDMA();
+    // tft.invertDisplay(true);
 
     break;
   }
@@ -131,10 +151,7 @@ void setup() {
 void loop() {
   if (mode == ModeMap) {
     lv_timer_handler();
-    // lv_tick_inc(10);
-    // delay(10);
   } else if (mode == ModeRoute) {
   } else if (mode == ModeMirror) {
-    ServerLoop();
   }
 }
