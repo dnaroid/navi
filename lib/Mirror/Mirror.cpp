@@ -1,5 +1,6 @@
 #include "Mirror.h"
-#include <secrets.h>
+
+#include <globals.h>
 #include <TFT_eSPI.h>
 #include <TJpg_Decoder.h>
 

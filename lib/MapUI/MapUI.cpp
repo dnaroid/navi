@@ -3,7 +3,6 @@
 #include "lvgl.h"
 #include <BootManager.h>
 #include <HTTPClient.h>
-#include <secrets.h>
 #include <sqlite3.h>
 #include <TJpg_Decoder.h>
 #include <vector>
