@@ -8,6 +8,7 @@
 #include <queue>
 #include <sqlite3.h>
 #include "globals.h"
+#include "Helpers.h"
 
 
 // Memory-Bounded A*
@@ -219,46 +220,15 @@ public:
     }
 
     void calculateMapCenterAndZoom() {
-        const int WORLD_DIM = 256;
-
-        if (path.empty()) return;
-
-        float minLon = std::numeric_limits<float>::max();
-        float maxLon = std::numeric_limits<float>::lowest();
-        float minLat = std::numeric_limits<float>::max();
-        float maxLat = std::numeric_limits<float>::lowest();
-
-        for (const auto& loc : path) {
-            if (loc.lon < minLon) minLon = loc.lon;
-            if (loc.lon > maxLon) maxLon = loc.lon;
-            if (loc.lat < minLat) minLat = loc.lat;
-            if (loc.lat > maxLat) maxLat = loc.lat;
-        }
-
-        pathCenter = {
-            .lon = (minLon + maxLon) / 2.0f,
-            .lat = (minLat + maxLat) / 2.0f,
+        if (path.empty()) {
+            zoom = ZOOM_MAX;
+            return;
         };
 
-        auto latRad = [](float lat) -> float {
-            float sin = std::sin(lat * M_PI / 180.0f);
-            double radX2 = std::log((1 + sin) / (1 - sin)) / 2;
-            return std::max(std::min(radX2, M_PI), -M_PI) / 2;
-        };
+        auto cz = getBBoxCenterAndZoom(getBBox(path));
 
-        auto zoom_lambda = [](float mapPx, float worldPx, float fraction) -> int {
-            return std::floor(std::log(mapPx / worldPx / fraction) / M_LN2);
-        };
-
-        float latFraction = (latRad(maxLat) - latRad(minLat)) / M_PI;
-        float lngDiff = maxLon - minLon;
-        float lngFraction = ((lngDiff < 0) ? (lngDiff + 360.0f) : lngDiff) / 360.0f;
-
-        int latZoom = zoom_lambda(SCREEN_HEIGHT, WORLD_DIM, latFraction);
-        int lngZoom = zoom_lambda(SCREEN_WIDTH, WORLD_DIM, lngFraction);
-
-        zoom = std::min(latZoom, lngZoom);
-        zoom = std::min(zoom, ZOOM_MAX);
+        pathCenter = cz.center;
+        zoom = cz.zoom;
     }
 };
 

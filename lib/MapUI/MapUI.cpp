@@ -10,6 +10,7 @@
 #include "marker.c"
 #include "compass.c"
 #include "UIhelpers.cpp"
+#include "Helpers.h"
 
 #define DEBUG_MAP 0
 #if DEBUG_MAP == 1
@@ -22,14 +23,20 @@ LV_IMG_DECLARE(marker)
 LV_IMG_DECLARE(compass)
 LV_FONT_DECLARE(montserrat_14_pl)
 
-#define SYMBOL_ZOOM_IN  "0"
-#define SYMBOL_ZOOM_OUT "1"
-#define SYMBOL_GPS_OFF  "3"
-#define SYMBOL_GPS_ON   "2"
-#define SYMBOL_ROUTE    "4"
-#define SYMBOL_SEARCH   "5"
-#define SYMBOL_MIRROR   "6"
-#define SYMBOL_EXIT     "7"
+#define SYMBOL_ZOOM_IN   "0"
+#define SYMBOL_ZOOM_OUT  "1"
+#define SYMBOL_DEL       "2"
+#define SYMBOL_GPS       "3"
+#define SYMBOL_ROUTE     "4"
+#define SYMBOL_SEARCH    "5"
+#define SYMBOL_MIRROR    "6"
+#define SYMBOL_EXIT      "7"
+#define SYMBOL_SATELLITE "8"
+#define SYMBOL_ALL       "9"
+#define SYMBOL_BIKE      ":"
+#define SYMBOL_CAR       ";"
+#define SYMBOL_WALK      "<"
+#define SYMBOL_SETTINGS  "="
 
 #define TIMER_PERIOD 100
 #define DRAG_THRESHOLD 10
@@ -43,10 +50,11 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define ADDR_SEARCH_LIMIT 5
 #define TILES_X_SCAN {0,-1,1} // first tile should be central!
 #define TILES_Y_SCAN {0,-1,1}
-#define PRIMARY_COLOR lv_color_hex(0x2196F3)
-#define TOAST_COLOR lv_color_hex(0xFF5722)
+#define COLOR_PRIMARY   lv_palette_main(LV_PALETTE_BLUE)
+#define COLOR_SECONDARY lv_palette_main(LV_PALETTE_ORANGE)
+#define COLOR_INACTIVE lv_palette_main(LV_PALETTE_GREY)
 
-extern int camWSnumber;
+extern int camWsClientNumber;
 extern bool camEnabled;
 
 struct UICommand {
@@ -74,10 +82,10 @@ struct Tile {
 struct Marker {
     lv_obj_t* obj;
     Location loc;
-    lv_point_t pos;
 };
 
 static Location centerLoc;
+static bool prevGpsStateReady = false;
 static int zoom = 0;
 
 static char* zErrMsg = nullptr;
@@ -90,8 +98,12 @@ static lv_obj_t* btn_zoom_in;
 static lv_obj_t* btn_zoom_out;
 static lv_obj_t* btn_gps;
 static lv_obj_t* btn_route;
+static lv_obj_t* btn_del_route;
 static lv_obj_t* btn_search;
 static lv_obj_t* btn_mirror;
+
+static lv_obj_t* ico_gps;
+static lv_obj_t* ico_transport;
 static lv_obj_t* line_route;
 static lv_obj_t* keyboard;
 static lv_obj_t* search_field;
@@ -103,6 +115,7 @@ static Marker marker_target;
 static lv_point_precise_t* route_px;
 
 static std::vector<Tile> tiles;
+static std::vector<Marker> markers;
 static std::vector<Location> route = {};
 static float distance = -1;
 
@@ -110,9 +123,14 @@ static lv_timer_t* hold_timer = nullptr;
 static bool is_hold_valid = false;
 
 // proto
-static void onClickAddrList(lv_event_t* lv_event);
+static void onClickAddrList(lv_event_t*);
+static void updateMarkers(bool onlyMe = false);
+static void updateMap(bool force = false);
+static void updateRoute();
+static void updateButtons();
 
-static void showSearchDialog(bool visible) {
+
+static void showSearchDialog(const bool visible) {
     if (visible) {
         lv_textarea_set_text(search_field, "");
         show(keyboard);
@@ -128,6 +146,7 @@ static void showToast(const char* text) {
     lv_label_set_text(toast, text);
     show(toast);
 }
+
 
 static void searchAddress() {
     showSearchDialog(false);
@@ -153,22 +172,54 @@ static void searchAddress() {
                  }, (void*)dbData, &zErrMsg);
     hide(toast);
     if (foundAddrs.size() == 0) return;
+
+    float minLon = std::numeric_limits<float>::max();
+    float maxLon = std::numeric_limits<float>::lowest();
+    float minLat = std::numeric_limits<float>::max();
+    float maxLat = std::numeric_limits<float>::lowest();
+
     for (auto addr : foundAddrs) {
+        const auto img = lv_img_create(lv_scr_act());
+        lv_image_set_src(img, &marker);
+        lv_obj_center(img);
+        markers.push_back({img, addr.location});
+        if (addr.location.lon < minLon) minLon = addr.location.lon;
+        if (addr.location.lon > maxLon) maxLon = addr.location.lon;
+        if (addr.location.lat < minLat) minLat = addr.location.lat;
+        if (addr.location.lat > maxLat) maxLat = addr.location.lat;
+
         lv_obj_t* btn = lv_list_add_btn(lst_addrs, NULL, addr.name.c_str());
         lv_obj_add_event_cb(btn, onClickAddrList, LV_EVENT_CLICKED, NULL);
         addr.btn = btn;
     }
-    show(lst_addrs);
+    if (marker_me.loc.lon < minLon) minLon = marker_me.loc.lon;
+    if (marker_me.loc.lon > maxLon) maxLon = marker_me.loc.lon;
+    if (marker_me.loc.lat < minLat) minLat = marker_me.loc.lat;
+    if (marker_me.loc.lat > maxLat) maxLat = marker_me.loc.lat;
+
+    const CenterAndZoom cz = getBBoxCenterAndZoom({minLon, maxLon, minLat, maxLat});
+    centerLoc = cz.center;
+    zoom = cz.zoom;
+    updateMap();
+    updateMarkers();
+    updateRoute();
+    updateButtons();
+    // show(lst_addrs);
 }
 
-static void updateMarkers(bool onlyMe = false) {
+static void updateMarkers(bool onlyMe) {
+    static lv_point_t pos;
     if (marker_me.obj != nullptr && visible(marker_me.obj)) {
-        marker_me.pos = locToCenterOffsetPx(marker_me.loc, centerLoc, zoom);
-        lv_obj_set_pos(marker_me.obj, marker_me.pos.x + MARKER_ME_OX, marker_me.pos.y + MARKER_ME_OY);
+        pos = locToCenterOffsetPx(marker_me.loc, centerLoc, zoom);
+        lv_obj_set_pos(marker_me.obj, pos.x + MARKER_ME_OX, pos.y + MARKER_ME_OY);
     }
     if (!onlyMe && marker_target.obj != nullptr && visible(marker_target.obj)) {
-        marker_target.pos = locToCenterOffsetPx(marker_target.loc, centerLoc, zoom);
-        lv_obj_set_pos(marker_target.obj, marker_target.pos.x + MARKER_TARGET_OX, marker_target.pos.y + MARKER_TARGET_OY);
+        pos = locToCenterOffsetPx(marker_target.loc, centerLoc, zoom);
+        lv_obj_set_pos(marker_target.obj, pos.x + MARKER_TARGET_OX, pos.y + MARKER_TARGET_OY);
+    }
+    for (auto& m : markers) {
+        pos = locToCenterOffsetPx(m.loc, centerLoc, zoom);
+        lv_obj_set_pos(m.obj, pos.x + MARKER_TARGET_OX, pos.y + MARKER_TARGET_OY);
     }
 }
 
@@ -181,13 +232,13 @@ static void updateRoute() {
     lv_line_set_points(line_route, route_px, idx);
 }
 
-static void updateMap(const bool force = false) {
-    lv_point_t centerPx = locToPx(centerLoc, zoom);
-    int tile_x = centerPx.x / TILE_SIZE;
-    int tile_y = centerPx.y / TILE_SIZE;
-    int x_offset = centerPx.x % TILE_SIZE;
-    int y_offset = centerPx.y % TILE_SIZE;
-    bool changedTile = tiles[0].tile_x != tile_x || tiles[0].tile_y != tile_y || tiles[0].zoom != zoom || force;
+static void updateMap(bool force) {
+    const lv_point_t centerPx = locToPx(centerLoc, zoom);
+    const int tile_x = centerPx.x / TILE_SIZE;
+    const int tile_y = centerPx.y / TILE_SIZE;
+    const int x_offset = centerPx.x % TILE_SIZE;
+    const int y_offset = centerPx.y % TILE_SIZE;
+    const bool changedTile = tiles[0].tile_x != tile_x || tiles[0].tile_y != tile_y || tiles[0].zoom != zoom || force;
 
     for (auto& t : tiles) {
         t.x = SCREEN_CENTER_X + t.tile_ox * TILE_SIZE - x_offset;
@@ -232,8 +283,8 @@ static void onDragTile(lv_event_t* e) {
 
     if (abs(delta.x) <= DRAG_THRESHOLD && abs(delta.y) <= DRAG_THRESHOLD) { return; }
 
-    lv_point_t centerPx = locToPx(centerLoc, zoom);
-    lv_point_t newCenterPx = {centerPx.x - delta.x, centerPx.y - delta.y};
+    const lv_point_t centerPx = locToPx(centerLoc, zoom);
+    const lv_point_t newCenterPx = {centerPx.x - delta.x, centerPx.y - delta.y};
     centerLoc = pxToLoc(newCenterPx, zoom);
 
     updateMap();
@@ -250,7 +301,8 @@ static void onClickAddrList(lv_event_t* e) {
     LOG("New loc", newLoc.lon, newLoc.lat);
     marker_target.loc = foundAddrs[index].location;
     centerLoc = marker_target.loc;
-    if (foundAddrs.size() == 1) hide(lst_addrs);
+    if (foundAddrs.size() == 1)
+        hide(lst_addrs);
     updateMap();
     updateMarkers();
     updateRoute();
@@ -271,8 +323,8 @@ static void onClickZoom(lv_event_t* e) {
 }
 
 static void onClickTile(lv_event_t* e) {
-    lv_event_code_t code = lv_event_get_code(e);
-    lv_indev_t* indev = lv_indev_get_act();
+    const lv_event_code_t code = lv_event_get_code(e);
+    const lv_indev_t* indev = lv_indev_get_act();
     if (indev == nullptr) return;
 
     if (visible(search_field)) {
@@ -287,9 +339,7 @@ static void onClickTile(lv_event_t* e) {
 
     if (code == LV_EVENT_PRESSED) {
         is_hold_valid = false;
-        hold_timer = lv_timer_create([](lv_timer_t* timer)-> void {
-            is_hold_valid = true;
-        }, HOLD_TIME_THRESHOLD, NULL);
+        run_after(HOLD_TIME_THRESHOLD, is_hold_valid = true;)
     } else if (code == LV_EVENT_RELEASED) {
         if (hold_timer) {
             lv_timer_del(hold_timer);
@@ -298,13 +348,12 @@ static void onClickTile(lv_event_t* e) {
 
         if (!is_hold_valid) return;
 
-        lv_point_t vect;
-        lv_indev_get_vect(indev, &vect);
-        if (abs(vect.x) > DRAG_THRESHOLD || abs(vect.y) > DRAG_THRESHOLD) return; // drag detected
-
+        lv_point_t delta;
+        lv_indev_get_vect(indev, &delta);
+        if (abs(delta.x) > DRAG_THRESHOLD || abs(delta.y) > DRAG_THRESHOLD) return; // drag detected
 
         const auto* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
-        for (auto& t : tiles) {
+        for (const auto& t : tiles) {
             if (t.obj == obj) {
                 lv_point_t point;
                 lv_indev_get_point(lv_indev_get_act(), &point);
@@ -328,33 +377,45 @@ static void onClickGps(lv_event_t* e) {
     updateButtons();
 }
 
-static void onTimerTick(lv_timer_t* timer) {
-    // todo watch lost connection
-    if (hidden(marker_me.obj)) {
-        if (my_location.lon != 0) {
-            marker_me.loc = my_location;
-            show(marker_me.obj);
-            enable(btn_gps);
-            onClickGps(nullptr);
-        }
-    } else {
+static void onGpsFound() {
+    lv_obj_set_style_text_color(ico_gps,COLOR_PRIMARY, 0);
+}
+
+static void onGpsLost() {
+    lv_obj_set_style_text_color(ico_gps,COLOR_INACTIVE, 0);
+}
+
+static void onTimerTick(lv_timer_t* _) {
+    if (my_location.lon != 0) {
         marker_me.loc = my_location;
-        auto angle_fixed = -(int16_t)(((int)compass_angle - 90) % 360 * 10);
-        lv_image_set_rotation(marker_me.obj, angle_fixed);
-        updateMarkers(true);
+        if (!prevGpsStateReady) onGpsFound();
+        prevGpsStateReady = true;
+    } else {
+        if (prevGpsStateReady) onGpsLost();
+        prevGpsStateReady = false;
     }
-    if (camEnabled && camWSnumber == -1) {
-        //todo: show spinner
-    }
+
+    const auto angle_fixed = -static_cast<int16_t>((static_cast<int>(compass_angle) + COMPASS_ANGLE_CORRECTION) % 360 * 10);
+    lv_image_set_rotation(marker_me.obj, angle_fixed);
+    updateMarkers(true);
 }
 
 static void onClickRoute(lv_event_t* e) {
     hide(lst_addrs);
     showToast("Calculating route.\nPlease wait...");
-    lv_timer_create([](lv_timer_t* timer) -> void {
-        writeBootState({CURRENT_BM_VER, ModeRoute, centerLoc, zoom, marker_me.loc, marker_target.loc});
-        esp_restart();
-    }, 100, NULL);
+    run_after(100, {
+              writeBootState({CURRENT_BM_VER, ModeRoute, centerLoc, zoom, marker_me.loc, marker_target.loc});
+              esp_restart();
+              })
+}
+
+static void onClickDelRoute(lv_event_t* e) {
+    writeBootState({CURRENT_BM_VER, ModeMap, centerLoc, zoom, marker_me.loc, marker_target.loc});
+    route.clear();
+    distance = 0;
+    lv_obj_del(line_route);
+    hide(btn_del_route);
+    show(btn_route);
 }
 
 static void onClickSearch(lv_event_t* e) {
@@ -366,10 +427,7 @@ static void onClickMirror(lv_event_t* e) {
     if (camEnabled) {
         Mirror_stop();
         lv_obj_remove_state(btn_mirror, LV_STATE_PRESSED);
-        lv_timer_create([](lv_timer_t* timer) -> void {
-            updateMap(true);
-            lv_timer_del(timer);
-        }, 500, NULL);
+        run_after(500, updateMap(true))
     } else {
         Mirror_start();
         lv_obj_add_state(btn_mirror, LV_STATE_PRESSED);
@@ -379,10 +437,7 @@ static void onClickMirror(lv_event_t* e) {
 static void onStartSearch(lv_event_t* e) {
     showSearchDialog(false);
     showToast("Searching address.\nPlease wait...");
-    lv_timer_create([](lv_timer_t* timer) -> void {
-        lv_timer_del(timer);
-        searchAddress();
-    }, 100, NULL);
+    run_after(100, searchAddress())
 }
 
 static void createRoute() {
@@ -438,16 +493,18 @@ static void createButtons() {
     y += step;
     btn_zoom_out = createBtn(SYMBOL_ZOOM_OUT, x, y, onClickZoom);
     y += step;
-    btn_gps = createBtn(SYMBOL_GPS_OFF, x, y, onClickGps);
-    disable(btn_gps);
+    btn_gps = createBtn(SYMBOL_GPS, x, y, onClickGps);
     y += step;
     btn_route = createBtn(SYMBOL_ROUTE, x, y, onClickRoute);
     if (distance > 0) {
-        String distanceText = String(distance, 1);
-        lbl_dist = lv_label_create(btn_route);
+        btn_del_route = createBtn(SYMBOL_DEL, x, y, onClickDelRoute);
+        const auto distanceText = String(distance, 1);
+        lbl_dist = lv_label_create(btn_del_route);
         lv_label_set_text(lbl_dist, distanceText.c_str());
         lv_obj_set_style_text_font(lbl_dist, &lv_font_montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_align(lbl_dist, LV_ALIGN_BOTTOM_MID, 0, 9);
+        lv_obj_align(lbl_dist, LV_ALIGN_BOTTOM_MID, 0, 7);
+        lv_obj_align(lv_obj_get_child(btn_del_route, 0), LV_ALIGN_TOP_MID, 0, -7);
+        hide(btn_route);
     }
     y += step;
     btn_search = createBtn(SYMBOL_SEARCH, x, y, onClickSearch);
@@ -455,26 +512,26 @@ static void createButtons() {
     btn_mirror = createBtn(SYMBOL_MIRROR, x, y, onClickMirror);
 }
 
-static void createMarkers(Location me, Location target) {
+static void createMarkers(Location start, Location target) {
     const auto img1 = lv_img_create(lv_scr_act());
     lv_image_set_src(img1, &compass);
     lv_obj_center(img1);
-    if (my_location.lat == 0.0) hide(img1);
-    Location myLoc = me.lat != 0.0 ? me : centerLoc;
-    marker_me = {img1, myLoc, locToCenterOffsetPx(myLoc, centerLoc, zoom)};
+    Location myLoc = start.lat != 0.0 ? start : centerLoc;
+    marker_me = {img1, myLoc};
 
     const auto img2 = lv_img_create(lv_scr_act());
     lv_image_set_src(img2, &marker);
     lv_obj_center(img2);
-    if (target.lat == 0.0) hide(img2);
-    marker_target = {img2, target, {0, 0}};
+    if (target.lat == 0.0)
+        hide(img2);
+    marker_target = {img2, target};
 }
 
 static void createToast() {
-    toast = lv_label_create(lv_screen_active());
+    toast = lv_label_create(lv_scr_act());
     lv_label_set_text(toast, "-");
     lv_obj_set_style_text_align(toast, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_bg_color(toast, TOAST_COLOR, 0);
+    lv_obj_set_style_bg_color(toast, COLOR_SECONDARY, 0);
     lv_obj_set_style_bg_opa(toast, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(toast, 10, 0);
     lv_obj_align(toast, LV_ALIGN_TOP_MID, 0, 10);
@@ -514,13 +571,33 @@ static void createKeyboard() {
 }
 
 static void createAddrList() {
-    lst_addrs = lv_list_create(lv_screen_active());
+    lst_addrs = lv_list_create(lv_scr_act());
     lv_obj_center(lst_addrs);
     hide(lst_addrs);
     lv_obj_set_style_text_font(lst_addrs, &montserrat_14_pl, 0);
     lv_obj_set_width(lst_addrs,LV_HOR_RES - 20);
     lv_obj_set_height(lst_addrs, LV_SIZE_CONTENT);
     lv_obj_align(lst_addrs, LV_ALIGN_BOTTOM_MID, 0, -10);
+}
+
+static void createStatusBar() {
+    int step = -30, x = -2, y = 2;
+
+    ico_transport = lv_label_create(lv_scr_act());
+    lv_label_set_text(ico_transport, SYMBOL_ALL);
+    lv_obj_set_style_text_font(ico_transport, &icons, 0);
+    lv_obj_set_style_text_color(ico_transport,COLOR_PRIMARY, 0);
+    lv_obj_align(ico_transport, LV_ALIGN_TOP_RIGHT, x, y);
+    lv_obj_add_flag(ico_transport, LV_OBJ_FLAG_CLICKABLE);
+    x += step;
+
+    ico_gps = lv_label_create(lv_scr_act());
+    lv_label_set_text(ico_gps, SYMBOL_SATELLITE);
+    lv_obj_set_style_text_font(ico_gps, &icons, 0);
+    lv_obj_set_style_text_color(ico_gps,COLOR_INACTIVE, 0);
+    lv_obj_align(ico_gps, LV_ALIGN_TOP_RIGHT, x, y);
+    disable(ico_gps);
+    x += step;
 }
 
 #ifdef DEBUG_VALUES
@@ -574,6 +651,7 @@ void Map_init(const BootState& state) {
     createKeyboard();
     createToast();
     createAddrList();
+    createStatusBar();
 
     updateMap();
     updateMarkers();

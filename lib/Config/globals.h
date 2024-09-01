@@ -43,10 +43,7 @@ extern Location my_location;
 #define ZOOM_MAX 18
 
 /// --- compass
-#define COMPASS_ANGLE_STEP 10
-#define COMPASS_ANGLE_CORRECTION 0
-#define COMPASS_MAGNETIC_DECLINATION_D 6
-#define COMPASS_MAGNETIC_DECLINATION_M 43
+#define COMPASS_ANGLE_CORRECTION (-180)
 
 /// --- timing
 #define COMPASS_UPD_SKIPS 2

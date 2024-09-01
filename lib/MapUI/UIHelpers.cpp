@@ -3,39 +3,21 @@
 
 LV_FONT_DECLARE(icons)
 
-// --- syntax sugar ---
+#define hidden(obj)          (lv_obj_has_flag((obj), LV_OBJ_FLAG_HIDDEN))
+#define visible(obj)         (!lv_obj_has_flag((obj), LV_OBJ_FLAG_HIDDEN))
+#define disabled(obj)        (lv_obj_has_state((obj), LV_STATE_DISABLED))
+#define enabled(obj)         (!lv_obj_has_state((obj), LV_STATE_DISABLED))
 
-bool hidden(const lv_obj_t* obj) {
-  return lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN);
-}
+#define hide(obj)            (lv_obj_add_flag((obj), LV_OBJ_FLAG_HIDDEN))
+#define show(obj)            (lv_obj_remove_flag((obj), LV_OBJ_FLAG_HIDDEN))
+#define disable(obj)         (lv_obj_add_state((obj), LV_STATE_DISABLED))
+#define enable(obj)          (lv_obj_remove_state((obj), LV_STATE_DISABLED))
 
-bool visible(const lv_obj_t* obj) {
-  return !lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN);
-}
-
-void hide(lv_obj_t* obj) {
-  lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-}
-
-void show(lv_obj_t* obj) {
-  lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
-}
-
-bool disabled(const lv_obj_t* obj) {
-  return lv_obj_has_state(obj, LV_STATE_DISABLED);
-}
-
-bool enabled(const lv_obj_t* obj) {
-  return !lv_obj_has_state(obj, LV_STATE_DISABLED);
-}
-
-void disable(lv_obj_t* obj) {
-  lv_obj_add_state(obj, LV_STATE_DISABLED);
-}
-
-void enable(lv_obj_t* obj) {
-  lv_obj_clear_state(obj, LV_STATE_DISABLED);
-}
+#define run_after(ms, block) \
+lv_timer_create([](lv_timer_t* timer) -> void { \
+lv_timer_del(timer); \
+block; \
+}, ms, NULL);
 
 lv_obj_t* createBtn(const char* label, const int32_t x, const int32_t y, const lv_event_cb_t onClick, const int32_t w = 40, const int32_t h = 40) {
   lv_obj_t* btn = lv_btn_create(lv_scr_act());

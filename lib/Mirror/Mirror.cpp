@@ -9,7 +9,7 @@ extern TFT_eSPI* tft_inst;
 extern SemaphoreHandle_t xGuiSemaphore;
 // global
 bool camEnabled = false;
-int camWSnumber = -1;
+int camWsClientNumber = -1;
 
 static WebSocketsServer webSocket(81);
 static bool serverReady = false;
@@ -29,11 +29,11 @@ static void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t 
   switch (type) {
   case WStype_DISCONNECTED:
     LOGF("[%u] Disconnected\n", num);
-    camWSnumber = -1;
+    camWsClientNumber = -1;
     break;
   case WStype_CONNECTED:
     LOGF("[%u] Connected\n", num);
-    camWSnumber = num;
+    camWsClientNumber = num;
     if (camEnabled) {
       webSocket.sendTXT(num, "start");
     } else {
@@ -67,14 +67,14 @@ void Mirror_start() {
   if (!serverReady) Mirror_init();
   camEnabled = true;
   LOG("[Mirror.cpp] cam enabled");
-  if (camWSnumber != -1) webSocket.sendTXT(camWSnumber, "start");
+  if (camWsClientNumber != -1) webSocket.sendTXT(camWsClientNumber, "start");
 }
 
 
 void Mirror_stop() {
   camEnabled = false;
   LOG("[Mirror.cpp] cam disabled");
-  if (camWSnumber != -1) webSocket.sendTXT(camWSnumber, "stop");
+  if (camWsClientNumber != -1) webSocket.sendTXT(camWsClientNumber, "stop");
 }
 
 void Mirror_loop() {
