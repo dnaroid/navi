@@ -47,7 +47,7 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define MARKER_TARGET_OY (-25)
 #define MARKER_ME_OX (0)
 #define MARKER_ME_OY (0)
-#define ADDR_SEARCH_LIMIT 5
+#define ADDR_SEARCH_LIMIT 10
 #define TILES_X_SCAN {0,-1,1} // first tile should be central!
 #define TILES_Y_SCAN {0,-1,1}
 #define COLOR_PRIMARY   lv_palette_main(LV_PALETTE_BLUE)
@@ -65,7 +65,6 @@ struct UICommand {
 struct Address {
     String name;
     Location location;
-    lv_obj_t* btn;
 };
 
 struct Tile {
@@ -106,16 +105,17 @@ static lv_obj_t* ico_gps;
 static lv_obj_t* ico_transport;
 static lv_obj_t* line_route;
 static lv_obj_t* keyboard;
-static lv_obj_t* search_field;
-static lv_obj_t* toast;
-static lv_obj_t* lst_addrs;
-static lv_obj_t* lbl_dist;
+static lv_obj_t* ta_search;
+static lv_obj_t* lbl_toast;
+static lv_obj_t* lbl_distance;
+static lv_obj_t* lbl_tooltip;
+
+static lv_point_precise_t* route_px;
 static Marker marker_me;
 static Marker marker_target;
-static lv_point_precise_t* route_px;
-
+static Marker* marker_selected = nullptr;
+static Marker markers[ADDR_SEARCH_LIMIT];
 static std::vector<Tile> tiles;
-static std::vector<Marker> markers;
 static std::vector<Location> route = {};
 static float distance = -1;
 
@@ -123,43 +123,45 @@ static lv_timer_t* hold_timer = nullptr;
 static bool is_hold_valid = false;
 
 // proto
-static void onClickAddrList(lv_event_t*);
 static void updateMarkers(bool onlyMe = false);
 static void updateMap(bool force = false);
 static void updateRoute();
 static void updateButtons();
-
+static void onClickMarker(lv_event_t* e);
+static void changeMapCenter(Location newLoc, int newZoom = zoom);
 
 static void showSearchDialog(const bool visible) {
     if (visible) {
-        lv_textarea_set_text(search_field, "");
+        lv_textarea_set_text(ta_search, "");
         show(keyboard);
-        show(search_field);
-        lv_obj_add_state(search_field, LV_STATE_FOCUSED);
+        show(ta_search);
+        lv_obj_add_state(ta_search, LV_STATE_FOCUSED);
     } else {
-        hide(search_field);
+        hide(ta_search);
         hide(keyboard);
     }
 }
 
 static void showToast(const char* text) {
-    lv_label_set_text(toast, text);
-    show(toast);
+    lv_label_set_text(lbl_toast, text);
+    show(lbl_toast);
 }
 
-
 static void searchAddress() {
+    marker_selected = nullptr;
+    updateMarkers();
     showSearchDialog(false);
+    hide(lbl_tooltip);
 
-    for (auto& addr : foundAddrs)
-        lv_obj_del(addr.btn);
-
-    auto modifiedText = String(lv_textarea_get_text(search_field));
+    auto modifiedText = String(lv_textarea_get_text(ta_search));
     LOG("Search for", modifiedText);
     modifiedText.replace(' ', '%');
-    const String query = "SELECT str, num, lon, lat FROM addr WHERE alias LIKE '%"
+    const String query = "SELECT str, num, lon, lat, "
+        "((lat - " + String(marker_me.loc.lat) + ") * (lat - " + String(marker_me.loc.lat) + ") + "
+        "(lon - " + String(marker_me.loc.lon) + ") * (lon - " + String(marker_me.loc.lon) + ")) "
+        "AS distance FROM addr WHERE alias LIKE '%"
         + modifiedText
-        + "%' ORDER BY CAST(num AS INTEGER) ASC LIMIT "
+        + "%' ORDER BY distance ASC, CAST(num AS INTEGER) ASC LIMIT "
         + ADDR_SEARCH_LIMIT;
     const char* queryCStr = query.c_str();
     sqlite3_exec(addrDb, queryCStr,
@@ -170,41 +172,32 @@ static void searchAddress() {
                      foundAddrs.push_back(Address{name, {lon, lat}});
                      return 0;
                  }, (void*)dbData, &zErrMsg);
-    hide(toast);
-    if (foundAddrs.size() == 0) return;
+    hide(lbl_toast);
+    if (foundAddrs.empty()) return;
 
-    float minLon = std::numeric_limits<float>::max();
-    float maxLon = std::numeric_limits<float>::lowest();
-    float minLat = std::numeric_limits<float>::max();
-    float maxLat = std::numeric_limits<float>::lowest();
+    int idx = 0;
+    bbox_reset();
 
-    for (auto addr : foundAddrs) {
-        const auto img = lv_img_create(lv_scr_act());
-        lv_image_set_src(img, &marker);
-        lv_obj_center(img);
-        markers.push_back({img, addr.location});
-        if (addr.location.lon < minLon) minLon = addr.location.lon;
-        if (addr.location.lon > maxLon) maxLon = addr.location.lon;
-        if (addr.location.lat < minLat) minLat = addr.location.lat;
-        if (addr.location.lat > maxLat) maxLat = addr.location.lat;
-
-        lv_obj_t* btn = lv_list_add_btn(lst_addrs, NULL, addr.name.c_str());
-        lv_obj_add_event_cb(btn, onClickAddrList, LV_EVENT_CLICKED, NULL);
-        addr.btn = btn;
+    for (const auto& addr : foundAddrs) {
+        show(markers[idx].obj);
+        markers[idx++].loc = addr.location;
+        bbox_compare(addr.location);
     }
-    if (marker_me.loc.lon < minLon) minLon = marker_me.loc.lon;
-    if (marker_me.loc.lon > maxLon) maxLon = marker_me.loc.lon;
-    if (marker_me.loc.lat < minLat) minLat = marker_me.loc.lat;
-    if (marker_me.loc.lat > maxLat) maxLat = marker_me.loc.lat;
+    bbox_compare(marker_me.loc);
 
-    const CenterAndZoom cz = getBBoxCenterAndZoom({minLon, maxLon, minLat, maxLat});
-    centerLoc = cz.center;
-    zoom = cz.zoom;
+    run_after(100, {
+              CenterAndZoom cz = getBBoxCenterAndZoom(bbox_result());
+              changeMapCenter(cz.center, cz.zoom);
+              })
+}
+
+static void changeMapCenter(Location newLoc, int newZoom) {
+    centerLoc = newLoc;
+    zoom = newZoom;
     updateMap();
     updateMarkers();
     updateRoute();
     updateButtons();
-    // show(lst_addrs);
 }
 
 static void updateMarkers(bool onlyMe) {
@@ -213,13 +206,15 @@ static void updateMarkers(bool onlyMe) {
         pos = locToCenterOffsetPx(marker_me.loc, centerLoc, zoom);
         lv_obj_set_pos(marker_me.obj, pos.x + MARKER_ME_OX, pos.y + MARKER_ME_OY);
     }
-    if (!onlyMe && marker_target.obj != nullptr && visible(marker_target.obj)) {
+    if (onlyMe) return;
+
+    if (marker_target.obj != nullptr && visible(marker_target.obj)) {
         pos = locToCenterOffsetPx(marker_target.loc, centerLoc, zoom);
         lv_obj_set_pos(marker_target.obj, pos.x + MARKER_TARGET_OX, pos.y + MARKER_TARGET_OY);
     }
-    for (auto& m : markers) {
-        pos = locToCenterOffsetPx(m.loc, centerLoc, zoom);
-        lv_obj_set_pos(m.obj, pos.x + MARKER_TARGET_OX, pos.y + MARKER_TARGET_OY);
+    for (int idx = 0; idx < foundAddrs.size(); idx++) {
+        pos = locToCenterOffsetPx(markers[idx].loc, centerLoc, zoom);
+        lv_obj_set_pos(markers[idx].obj, pos.x + MARKER_TARGET_OX, pos.y + MARKER_TARGET_OY);
     }
 }
 
@@ -285,28 +280,7 @@ static void onDragTile(lv_event_t* e) {
 
     const lv_point_t centerPx = locToPx(centerLoc, zoom);
     const lv_point_t newCenterPx = {centerPx.x - delta.x, centerPx.y - delta.y};
-    centerLoc = pxToLoc(newCenterPx, zoom);
-
-    updateMap();
-    updateMarkers();
-    updateRoute();
-    updateButtons();
-}
-
-static void onClickAddrList(lv_event_t* e) {
-    auto* btn = static_cast<lv_obj_t*>(lv_event_get_target(e));
-    int index = lv_obj_get_index(btn);
-    show(marker_target.obj);
-    const Location newLoc = foundAddrs[index].location;
-    LOG("New loc", newLoc.lon, newLoc.lat);
-    marker_target.loc = foundAddrs[index].location;
-    centerLoc = marker_target.loc;
-    if (foundAddrs.size() == 1)
-        hide(lst_addrs);
-    updateMap();
-    updateMarkers();
-    updateRoute();
-    updateButtons();
+    changeMapCenter(pxToLoc(newCenterPx, zoom));
 }
 
 static void onClickZoom(lv_event_t* e) {
@@ -315,25 +289,65 @@ static void onClickZoom(lv_event_t* e) {
     int new_zoom = zoom + zoom_change;
     if (new_zoom == zoom) return;
     lv_cache_drop_all_cb_t();
-    zoom = new_zoom;
-    updateMap();
-    updateMarkers();
-    updateRoute();
-    updateButtons();
+    changeMapCenter(centerLoc, new_zoom);
 }
+
+static void onClickMarker(lv_event_t* e) {
+    hide(lbl_tooltip);
+    const auto* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
+    int idx = 0;
+    for (auto& m : markers) {
+        if (m.obj == obj) {
+            if (marker_selected != nullptr) {
+                lv_obj_set_style_img_recolor_opa(marker_selected->obj, LV_OPA_TRANSP, 0);
+            }
+            if (marker_selected == &m) { // second click
+                changeMapCenter(m.loc, ZOOM_DEFAULT);
+            } else { // first click
+                marker_selected = &m;
+                lv_obj_set_style_img_recolor_opa(marker_selected->obj, LV_OPA_COVER, 0);
+                lv_obj_set_style_img_recolor(marker_selected->obj, COLOR_SECONDARY, 0);
+                lv_label_set_text_static(lbl_tooltip, foundAddrs[idx].name.c_str());
+                lv_obj_align_to(lbl_tooltip, obj, LV_ALIGN_OUT_TOP_MID, 0, -5);
+
+                lv_coord_t max_width = SCREEN_WIDTH - 20;
+
+                lv_obj_set_width(lbl_tooltip, LV_SIZE_CONTENT);
+                if (lv_obj_get_width(lbl_tooltip) > max_width) lv_obj_set_width(lbl_tooltip, max_width);
+                lv_obj_align_to(lbl_tooltip, obj, LV_ALIGN_OUT_TOP_MID, 0, -5);
+                lv_area_t tooltip_area;
+                lv_obj_get_coords(lbl_tooltip, &tooltip_area);
+
+                if (tooltip_area.y1 < 10) {
+                    lv_obj_align_to(lbl_tooltip, obj, LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
+                }
+
+                if (tooltip_area.x1 < 0) {
+                    lv_obj_set_x(lbl_tooltip, 10);
+                } else if (tooltip_area.x2 > SCREEN_WIDTH) {
+                    lv_obj_set_x(lbl_tooltip, SCREEN_WIDTH - lv_obj_get_width(lbl_tooltip) - 10);
+                }
+                hide(marker_target.obj);
+                show(lbl_tooltip);
+                break;
+            }
+        }
+        idx++;
+    }
+}
+
 
 static void onClickTile(lv_event_t* e) {
     const lv_event_code_t code = lv_event_get_code(e);
     const lv_indev_t* indev = lv_indev_get_act();
     if (indev == nullptr) return;
 
-    if (visible(search_field)) {
+    if (visible(ta_search)) {
         showSearchDialog(false);
         return;
     }
-
-    if (visible(lst_addrs)) {
-        hide(lst_addrs);
+    if (visible(lbl_tooltip)) {
+        hide(lbl_tooltip);
         return;
     }
 
@@ -360,6 +374,12 @@ static void onClickTile(lv_event_t* e) {
                 marker_target.loc = pointToLocation(point, centerLoc, zoom);
                 LOGF("%.6f, %.6f\n", marker_target.loc.lon, marker_target.loc.lat);
                 show(marker_target.obj);
+
+                if (marker_selected != nullptr) {
+                    lv_obj_set_style_img_recolor_opa(marker_selected->obj, LV_OPA_TRANSP, 0);
+                    marker_selected = nullptr;
+                }
+
                 updateMarkers();
                 updateButtons();
                 break;
@@ -369,12 +389,7 @@ static void onClickTile(lv_event_t* e) {
 }
 
 static void onClickGps(lv_event_t* e) {
-    centerLoc = marker_me.loc;
-    zoom = INIT_ZOOM;
-    updateMap();
-    updateMarkers();
-    updateRoute();
-    updateButtons();
+    changeMapCenter(marker_me.loc, ZOOM_DEFAULT);
 }
 
 static void onGpsFound() {
@@ -386,8 +401,8 @@ static void onGpsLost() {
 }
 
 static void onTimerTick(lv_timer_t* _) {
-    if (my_location.lon != 0) {
-        marker_me.loc = my_location;
+    if (my_gps_location.lon != 0) {
+        marker_me.loc = my_gps_location;
         if (!prevGpsStateReady) onGpsFound();
         prevGpsStateReady = true;
     } else {
@@ -401,8 +416,8 @@ static void onTimerTick(lv_timer_t* _) {
 }
 
 static void onClickRoute(lv_event_t* e) {
-    hide(lst_addrs);
     showToast("Calculating route.\nPlease wait...");
+    lv_cache_drop_all_cb_t();
     run_after(100, {
               writeBootState({CURRENT_BM_VER, ModeRoute, centerLoc, zoom, marker_me.loc, marker_target.loc});
               esp_restart();
@@ -412,14 +427,17 @@ static void onClickRoute(lv_event_t* e) {
 static void onClickDelRoute(lv_event_t* e) {
     writeBootState({CURRENT_BM_VER, ModeMap, centerLoc, zoom, marker_me.loc, marker_target.loc});
     route.clear();
-    distance = 0;
+    distance = -1;
     lv_obj_del(line_route);
     hide(btn_del_route);
     show(btn_route);
 }
 
 static void onClickSearch(lv_event_t* e) {
-    hide(lst_addrs);
+    for (int idx = 0; idx < ADDR_SEARCH_LIMIT; idx++) {
+        hide(markers[idx].obj);
+    }
+    updateMarkers();
     showSearchDialog(true);
 }
 
@@ -499,10 +517,10 @@ static void createButtons() {
     if (distance > 0) {
         btn_del_route = createBtn(SYMBOL_DEL, x, y, onClickDelRoute);
         const auto distanceText = String(distance, 1);
-        lbl_dist = lv_label_create(btn_del_route);
-        lv_label_set_text(lbl_dist, distanceText.c_str());
-        lv_obj_set_style_text_font(lbl_dist, &lv_font_montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_align(lbl_dist, LV_ALIGN_BOTTOM_MID, 0, 7);
+        lbl_distance = lv_label_create(btn_del_route);
+        lv_label_set_text(lbl_distance, distanceText.c_str());
+        lv_obj_set_style_text_font(lbl_distance, &lv_font_montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_align(lbl_distance, LV_ALIGN_BOTTOM_MID, 0, 7);
         lv_obj_align(lv_obj_get_child(btn_del_route, 0), LV_ALIGN_TOP_MID, 0, -7);
         hide(btn_route);
     }
@@ -513,32 +531,58 @@ static void createButtons() {
 }
 
 static void createMarkers(Location start, Location target) {
+    const auto img2 = lv_img_create(lv_scr_act());
+    lv_image_set_src(img2, &marker);
+    lv_obj_center(img2);
+    lv_obj_set_style_img_recolor_opa(img2, LV_OPA_COVER, 0);
+    lv_obj_set_style_img_recolor(img2, lv_palette_main(LV_PALETTE_RED), 0);
+    if (target.lat == 0.0)
+        hide(img2);
+    marker_target = {img2, target};
+
+    for (int idx = 0; idx < ADDR_SEARCH_LIMIT; idx++) {
+        const auto img = lv_img_create(lv_scr_act());
+        lv_image_set_src(img, &marker);
+        lv_obj_center(img);
+        lv_obj_add_flag(img, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(img, onClickMarker, LV_EVENT_PRESSED, NULL);
+        markers[idx] = {img, {0, 0}};
+        hide(img);
+    }
     const auto img1 = lv_img_create(lv_scr_act());
     lv_image_set_src(img1, &compass);
     lv_obj_center(img1);
     Location myLoc = start.lat != 0.0 ? start : centerLoc;
     marker_me = {img1, myLoc};
-
-    const auto img2 = lv_img_create(lv_scr_act());
-    lv_image_set_src(img2, &marker);
-    lv_obj_center(img2);
-    if (target.lat == 0.0)
-        hide(img2);
-    marker_target = {img2, target};
 }
 
 static void createToast() {
-    toast = lv_label_create(lv_scr_act());
-    lv_label_set_text(toast, "-");
-    lv_obj_set_style_text_align(toast, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_bg_color(toast, COLOR_SECONDARY, 0);
-    lv_obj_set_style_bg_opa(toast, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_all(toast, 10, 0);
-    lv_obj_align(toast, LV_ALIGN_TOP_MID, 0, 10);
-    lv_obj_set_style_text_color(toast, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_radius(toast, 6, 0);
+    lbl_toast = lv_label_create(lv_scr_act());
+    lv_label_set_text(lbl_toast, "-");
+    lv_obj_set_style_text_align(lbl_toast, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_bg_color(lbl_toast, COLOR_SECONDARY, 0);
+    lv_obj_set_style_bg_opa(lbl_toast, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(lbl_toast, 10, 0);
+    lv_obj_align(lbl_toast, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_set_style_text_color(lbl_toast, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_radius(lbl_toast, 6, 0);
 
-    hide(toast);
+    hide(lbl_toast);
+}
+
+static void createTooltip() {
+    lbl_tooltip = lv_label_create(lv_scr_act());
+    lv_obj_set_style_bg_color(lbl_tooltip, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(lbl_tooltip, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(lbl_tooltip, lv_color_black(), 0);
+    lv_obj_set_style_text_color(lbl_tooltip, lv_color_black(), 0);
+    lv_obj_set_style_border_width(lbl_tooltip, 1, 0);
+    lv_obj_center(lbl_tooltip);
+    lv_obj_set_style_text_font(lbl_tooltip, &montserrat_14_pl, 0);
+    lv_obj_set_style_pad_all(lbl_tooltip, 10, 0);
+    lv_obj_set_style_radius(lbl_tooltip, 6, 0);
+    lv_label_set_long_mode(lbl_tooltip, LV_LABEL_LONG_WRAP);
+    hide(lbl_tooltip);
 }
 
 static void createKeyboard() {
@@ -556,28 +600,18 @@ static void createKeyboard() {
         1, 1, 1, 1, 2, 1, 1, 1, 1
     };
 
-    search_field = lv_textarea_create(lv_scr_act());
-    lv_obj_align(search_field, LV_ALIGN_TOP_MID, 0, 10);
-    lv_textarea_set_placeholder_text(search_field, "Search address");
-    lv_obj_set_size(search_field, SCREEN_WIDTH - 20, 40);
+    ta_search = lv_textarea_create(lv_scr_act());
+    lv_obj_align(ta_search, LV_ALIGN_TOP_MID, 0, 10);
+    lv_textarea_set_placeholder_text(ta_search, "Search address");
+    lv_obj_set_size(ta_search, SCREEN_WIDTH - 20, 40);
 
     keyboard = lv_keyboard_create(lv_scr_act());
     lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_USER_1, kb_map, kb_ctrl);
     lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_USER_1);
-    lv_keyboard_set_textarea(keyboard, search_field);
-    lv_obj_add_event_cb(search_field, onStartSearch, LV_EVENT_READY, keyboard);
+    lv_keyboard_set_textarea(keyboard, ta_search);
+    lv_obj_add_event_cb(ta_search, onStartSearch, LV_EVENT_READY, keyboard);
 
     showSearchDialog(false);
-}
-
-static void createAddrList() {
-    lst_addrs = lv_list_create(lv_scr_act());
-    lv_obj_center(lst_addrs);
-    hide(lst_addrs);
-    lv_obj_set_style_text_font(lst_addrs, &montserrat_14_pl, 0);
-    lv_obj_set_width(lst_addrs,LV_HOR_RES - 20);
-    lv_obj_set_height(lst_addrs, LV_SIZE_CONTENT);
-    lv_obj_align(lst_addrs, LV_ALIGN_BOTTOM_MID, 0, -10);
 }
 
 static void createStatusBar() {
@@ -634,29 +668,28 @@ void Map_init(const BootState& state) {
 
     route_px = new lv_point_precise_t[state.route.size()];
 
-    centerLoc = state.center;
-    zoom = state.zoom;
     route = state.route;
     distance = state.distance;
 
     createMap();
-
-#ifdef DEBUG_VALUES
-    createDebugDashboard();
-#endif
-
     createRoute();
     createMarkers(state.start, state.end);
     createButtons();
     createKeyboard();
     createToast();
-    createAddrList();
     createStatusBar();
+    createTooltip();
 
-    updateMap();
-    updateMarkers();
-    updateRoute();
-    updateButtons();
+    changeMapCenter(state.center, state.zoom);
+
+    // run_after(1000, {
+    //           lv_textarea_set_text(ta_search,"zabka");
+    //           searchAddress();
+    //           })
+
+#ifdef DEBUG_VALUES
+    createDebugDashboard();
+#endif
 
     lv_timer_create(onTimerTick, TIMER_PERIOD, NULL);
 

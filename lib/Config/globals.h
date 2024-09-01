@@ -17,9 +17,9 @@ struct Location {
 };
 
 extern float compass_angle;
-extern Location my_location;
+extern Location my_gps_location;
 
-#define INIT_ZOOM 16
+#define ZOOM_DEFAULT 16
 
 /// --- pins
 #define SD_CS    7
@@ -43,7 +43,7 @@ extern Location my_location;
 #define ZOOM_MAX 18
 
 /// --- compass
-#define COMPASS_ANGLE_CORRECTION (-180)
+#define COMPASS_ANGLE_CORRECTION (90)
 
 /// --- timing
 #define COMPASS_UPD_SKIPS 2

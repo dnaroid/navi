@@ -16,7 +16,7 @@
 
 // global
 float compass_angle;
-Location my_location = {0, 0};
+Location my_gps_location = {0, 0};
 
 TinyGPSPlus gps;
 LSM303 compass;
@@ -32,7 +32,7 @@ auto spiShared = SPIClass(HSPI);
 int gpsSkips = 0;
 int compassSkips = 0;
 
-void updateCompassAndGPS(void* pvParameters) {
+void updateCompassAndGpsTask(void* pvParameters) {
   while (true) {
     if (compassSkips++ > COMPASS_UPD_SKIPS) {
       compass.read();
@@ -47,8 +47,8 @@ void updateCompassAndGPS(void* pvParameters) {
       if (gps.location.isUpdated()) {
         float gpsLat = gps.location.lat();
         float gpsLon = gps.location.lng();
-        my_location.lat = gpsLat;
-        my_location.lon = gpsLon;
+        my_gps_location.lat = gpsLat;
+        my_gps_location.lon = gpsLon;
       }
       gpsSkips = 0;
     }
@@ -102,7 +102,7 @@ void setup() {
 
     Map_init(state);
 
-    xTaskCreatePinnedToCore(updateCompassAndGPS, "UpdateTask", 4096, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(updateCompassAndGpsTask, "UpdateTask", 4096, NULL, 1, NULL, 1);
 
     break;
 

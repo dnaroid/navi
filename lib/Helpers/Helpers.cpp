@@ -1,19 +1,35 @@
 #include "Helpers.h"
 
+static float minLon;
+static float maxLon;
+static float minLat;
+static float maxLat;
+
+void bbox_reset() {
+  minLon = std::numeric_limits<float>::max();
+  maxLon = std::numeric_limits<float>::lowest();
+  minLat = std::numeric_limits<float>::max();
+  maxLat = std::numeric_limits<float>::lowest();
+}
+
+void bbox_compare(Location loc) {
+  if (loc.lon < minLon) minLon = loc.lon;
+  if (loc.lon > maxLon) maxLon = loc.lon;
+  if (loc.lat < minLat) minLat = loc.lat;
+  if (loc.lat > maxLat) maxLat = loc.lat;
+}
+
+BBox bbox_result() {
+  return {minLon, maxLon, minLat, maxLat};
+}
 
 BBox getBBox(const std::vector<Location>& locations) {
-  float minLon = std::numeric_limits<float>::max();
-  float maxLon = std::numeric_limits<float>::lowest();
-  float minLat = std::numeric_limits<float>::max();
-  float maxLat = std::numeric_limits<float>::lowest();
+  bbox_reset();
 
   for (const auto& loc : locations) {
-    if (loc.lon < minLon) minLon = loc.lon;
-    if (loc.lon > maxLon) maxLon = loc.lon;
-    if (loc.lat < minLat) minLat = loc.lat;
-    if (loc.lat > maxLat) maxLat = loc.lat;
+    bbox_compare(loc);
   }
-  return {minLon, maxLon, minLat, maxLat};
+  return bbox_result();
 }
 
 CenterAndZoom getBBoxCenterAndZoom(const BBox& bbox) {

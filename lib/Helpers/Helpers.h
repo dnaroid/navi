@@ -18,5 +18,8 @@ struct BBox {
 
 BBox getBBox(const std::vector<Location>& locations);
 CenterAndZoom getBBoxCenterAndZoom(const BBox& bbox);
+void bbox_reset();
+void bbox_compare(Location loc);
+BBox bbox_result();
 
 #endif //HELPERS_H

@@ -55,7 +55,7 @@ BootState readBootState() {
     CURRENT_BM_VER,
     ModeMap,
     {INIT_LON, INIT_LAT},
-    INIT_ZOOM,
+    ZOOM_DEFAULT,
     {0.0f, 0.0f},
     {0.0f, 0.0f},
     {},
