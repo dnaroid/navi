@@ -263,11 +263,34 @@ static void updateButtons() {
         enable(btn_zoom_in);
     }
 
-    if (marker_target.obj != nullptr && hidden(marker_target.obj)) {
+    if (marker_selected == nullptr && hidden(marker_target.obj)) {
         disable(btn_route);
     } else {
         enable(btn_route);
     }
+}
+
+static void onGpsFound() {
+    lv_obj_set_style_text_color(ico_gps,COLOR_PRIMARY, 0);
+}
+
+static void onGpsLost() {
+    lv_obj_set_style_text_color(ico_gps,COLOR_INACTIVE, 0);
+}
+
+static void onTimerTick(lv_timer_t* _) {
+    if (my_gps_location.lon != 0) {
+        marker_me.loc = my_gps_location;
+        if (!prevGpsStateReady) onGpsFound();
+        prevGpsStateReady = true;
+    } else {
+        if (prevGpsStateReady) onGpsLost();
+        prevGpsStateReady = false;
+    }
+
+    const auto angle_fixed = -static_cast<int16_t>((static_cast<int>(compass_angle) + COMPASS_ANGLE_CORRECTION) % 360 * 10);
+    lv_image_set_rotation(marker_me.obj, angle_fixed);
+    updateMarkers(true);
 }
 
 static void onDragTile(lv_event_t* e) {
@@ -336,7 +359,6 @@ static void onClickMarker(lv_event_t* e) {
     }
 }
 
-
 static void onClickTile(lv_event_t* e) {
     const lv_event_code_t code = lv_event_get_code(e);
     const lv_indev_t* indev = lv_indev_get_act();
@@ -346,11 +368,15 @@ static void onClickTile(lv_event_t* e) {
         showSearchDialog(false);
         return;
     }
+
     if (visible(lbl_tooltip)) {
         hide(lbl_tooltip);
         return;
     }
 
+    if (distance > 0) return;
+
+    // check click to add target marker
     if (code == LV_EVENT_PRESSED) {
         is_hold_valid = false;
         run_after(HOLD_TIME_THRESHOLD, is_hold_valid = true;)
@@ -366,6 +392,7 @@ static void onClickTile(lv_event_t* e) {
         lv_indev_get_vect(indev, &delta);
         if (abs(delta.x) > DRAG_THRESHOLD || abs(delta.y) > DRAG_THRESHOLD) return; // drag detected
 
+        // add target marker
         const auto* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
         for (const auto& t : tiles) {
             if (t.obj == obj) {
@@ -392,42 +419,21 @@ static void onClickGps(lv_event_t* e) {
     changeMapCenter(marker_me.loc, ZOOM_DEFAULT);
 }
 
-static void onGpsFound() {
-    lv_obj_set_style_text_color(ico_gps,COLOR_PRIMARY, 0);
-}
-
-static void onGpsLost() {
-    lv_obj_set_style_text_color(ico_gps,COLOR_INACTIVE, 0);
-}
-
-static void onTimerTick(lv_timer_t* _) {
-    if (my_gps_location.lon != 0) {
-        marker_me.loc = my_gps_location;
-        if (!prevGpsStateReady) onGpsFound();
-        prevGpsStateReady = true;
-    } else {
-        if (prevGpsStateReady) onGpsLost();
-        prevGpsStateReady = false;
-    }
-
-    const auto angle_fixed = -static_cast<int16_t>((static_cast<int>(compass_angle) + COMPASS_ANGLE_CORRECTION) % 360 * 10);
-    lv_image_set_rotation(marker_me.obj, angle_fixed);
-    updateMarkers(true);
-}
-
 static void onClickRoute(lv_event_t* e) {
     showToast("Calculating route.\nPlease wait...");
-    lv_cache_drop_all_cb_t();
     run_after(100, {
-              writeBootState({CURRENT_BM_VER, ModeRoute, centerLoc, zoom, marker_me.loc, marker_target.loc});
+              Location start = marker_me.loc;
+              Location end = marker_selected ? marker_selected->loc : marker_target.loc;
+              writeBootState({CURRENT_BM_VER, ModeRoute, TransportAll,centerLoc, zoom, start, end});
               esp_restart();
               })
 }
 
 static void onClickDelRoute(lv_event_t* e) {
-    writeBootState({CURRENT_BM_VER, ModeMap, centerLoc, zoom, marker_me.loc, marker_target.loc});
+    writeBootState({CURRENT_BM_VER, ModeMap, TransportAll, centerLoc, zoom, marker_me.loc, marker_target.loc});
     route.clear();
     distance = -1;
+    updateButtons();
     lv_obj_del(line_route);
     hide(btn_del_route);
     show(btn_route);
@@ -530,7 +536,7 @@ static void createButtons() {
     btn_mirror = createBtn(SYMBOL_MIRROR, x, y, onClickMirror);
 }
 
-static void createMarkers(Location start, Location target) {
+static void createMarkers(Location me, Location target) {
     const auto img2 = lv_img_create(lv_scr_act());
     lv_image_set_src(img2, &marker);
     lv_obj_center(img2);
@@ -552,7 +558,7 @@ static void createMarkers(Location start, Location target) {
     const auto img1 = lv_img_create(lv_scr_act());
     lv_image_set_src(img1, &compass);
     lv_obj_center(img1);
-    Location myLoc = start.lat != 0.0 ? start : centerLoc;
+    Location myLoc = me.lat != 0.0 ? me : centerLoc;
     marker_me = {img1, myLoc};
 }
 
@@ -667,13 +673,14 @@ void Map_init(const BootState& state) {
     sqlite3_open("/sd/addr.db", &addrDb);
 
     route_px = new lv_point_precise_t[state.route.size()];
-
+    centerLoc = state.center;
+    zoom = state.zoom;
     route = state.route;
     distance = state.distance;
 
     createMap();
     createRoute();
-    createMarkers(state.start, state.end);
+    createMarkers(state.center, state.end);
     createButtons();
     createKeyboard();
     createToast();
@@ -683,7 +690,7 @@ void Map_init(const BootState& state) {
     changeMapCenter(state.center, state.zoom);
 
     // run_after(1000, {
-    //           lv_textarea_set_text(ta_search,"zabka");
+    //           lv_textarea_set_text(ta_search,"lidl");
     //           searchAddress();
     //           })
 

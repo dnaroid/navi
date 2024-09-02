@@ -8,8 +8,8 @@
 #define WIFI_SSID "ESP32-SCOOTER"
 #define WIFI_PASSWORD "UoAcYyo5FErnjXk"
 
-#define INIT_LAT 54.393330
-#define INIT_LON 18.620926
+#define INIT_LAT 54.3520
+#define INIT_LON 18.6466
 
 struct Location {
   float lon;

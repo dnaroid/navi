@@ -55,6 +55,7 @@ CenterAndZoom getBBoxCenterAndZoom(const BBox& bbox) {
 
   zoom = std::min(latZoom, lngZoom);
   zoom = std::min(zoom, ZOOM_MAX);
+  zoom = std::max(zoom, ZOOM_MIN);
 
   return {
     .center = {

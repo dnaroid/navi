@@ -108,15 +108,11 @@ void setup() {
 
   case ModeRoute:
     sqlite3_initialize();
-    pf.init();
+    pf.init(state.transport);
     pf.findPath(state.start, state.end);
     pf.calculateMapCenterAndZoom();
-    writeBootState({CURRENT_BM_VER, ModeMap, pf.pathCenter, pf.zoom, state.start, state.end, pf.path, pf.distance});
+    writeBootState({CURRENT_BM_VER, ModeMap, state.transport, pf.pathCenter, pf.zoom, state.start, state.end, pf.distance, pf.path,});
     esp_restart();
-
-  case ModeMirror:
-
-    break;
   }
 
   LOG("---------------- Init done ----------------");
@@ -128,7 +124,5 @@ void loop() {
       lv_timer_handler();
       xSemaphoreGive(xGuiSemaphore);
     }
-  } else if (mode == ModeRoute) {
-  } else if (mode == ModeMirror) {
   }
 }

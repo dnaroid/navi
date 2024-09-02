@@ -7,7 +7,6 @@ const char* modeToString(const Mode mode) {
   switch (mode) {
   case ModeMap: return "Map";
   case ModeRoute: return "Route";
-  case ModeMirror: return "Mirror";
   default: return "Unknown";
   }
 }
@@ -20,7 +19,6 @@ void printBootState(const BootState& state) {
   std::cout << "  Start: (" << state.start.lon << ", " << state.start.lat << ")" << std::endl;
   std::cout << "  End: (" << state.end.lon << ", " << state.end.lat << ")" << std::endl;
   std::cout << "  Distance: " << state.distance << " km" << std::endl;
-
   std::cout << "  Route: " << std::endl;
   for (const auto& loc : state.route) {
     std::cout << "    (" << loc.lon << ", " << loc.lat << ")" << std::endl;
@@ -33,13 +31,11 @@ void writeBootState(const BootState& state) {
     LOG("Failed to open", MODE_FILE, "for writing");
     return;
   }
-  fprintf(file, "%c,%c,%.6f,%.6f,", state.version, state.mode, state.center.lon, state.center.lat);
-
+  fprintf(file, "%c,%c,%c,", CURRENT_BM_VER, state.mode, state.transport);
+  fprintf(file, "%.6f,%.6f,", state.center.lon, state.center.lat);
   fprintf(file, "%d,", state.zoom);
-
   fprintf(file, "%.6f,%.6f,", state.start.lon, state.start.lat);
   fprintf(file, "%.6f,%.6f,", state.end.lon, state.end.lat);
-
   fprintf(file, "%.6f,", state.distance);
 
   for (const auto& loc : state.route) {
@@ -51,15 +47,17 @@ void writeBootState(const BootState& state) {
 }
 
 BootState readBootState() {
+  // default values
   BootState state = {
     CURRENT_BM_VER,
     ModeMap,
+    TransportAll,
     {INIT_LON, INIT_LAT},
     ZOOM_DEFAULT,
     {0.0f, 0.0f},
     {0.0f, 0.0f},
-    {},
-    0.0f
+    0.0f,
+    {}
   };
   FILE* file = fopen(MODE_FILE, "r");
   if (!file) {
@@ -86,6 +84,8 @@ BootState readBootState() {
     state.mode = static_cast<Mode>(modeChar);
   }
   LOG("Current mode:", modeToString(state.mode));
+
+  fscanf(file, "%c,", &state.transport);
 
   fscanf(file, "%f,%f,", &state.center.lon, &state.center.lat);
 
