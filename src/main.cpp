@@ -79,15 +79,11 @@ void setup() {
 
   switch (mode) {
   case ModeMap:
-
     xGuiSemaphore = xSemaphoreCreateMutex();
-
-    Wire.begin(I2C_SDA, I2C_SCL, 0);
-    delay(100);
 
     Display_init();
 
-    Touch_init();
+    Wire.begin(I2C_SDA, I2C_SCL, 0);
 
     LOGI("Init Compass");
     compass.init();
@@ -99,6 +95,8 @@ void setup() {
     LOGI("Init GPS");
     gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
     LOG(" ok");
+
+    Touch_init();
 
     Map_init(state);
 

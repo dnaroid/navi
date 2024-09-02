@@ -3,7 +3,9 @@
 #include "lvgl.h"
 #include <BootManager.h>
 #include <HTTPClient.h>
+#include <iostream>
 #include <sqlite3.h>
+#include <sstream>
 #include <vector>
 #include "Mirror.h"
 #include "montserrat_14_pl.c"
@@ -11,6 +13,7 @@
 #include "compass.c"
 #include "UIhelpers.cpp"
 #include "Helpers.h"
+#include "Touch.h"
 
 #define DEBUG_MAP 0
 #if DEBUG_MAP == 1
@@ -41,6 +44,7 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define TIMER_PERIOD 100
 #define DRAG_THRESHOLD 10
 #define HOLD_TIME_THRESHOLD 20
+#define AFTER_DRAG_TIME_THRESHOLD 500
 #define FILE_NAME_SIZE 40
 #define MARKERS_OPACITY 180
 #define MARKER_TARGET_OX (0)
@@ -56,11 +60,6 @@ LV_FONT_DECLARE(montserrat_14_pl)
 
 extern int camWsClientNumber;
 extern bool camEnabled;
-
-struct UICommand {
-    const char* command;
-    const char* data;
-};
 
 struct Address {
     String name;
@@ -95,20 +94,19 @@ static std::vector<Address> foundAddrs;
 
 static lv_obj_t* btn_zoom_in;
 static lv_obj_t* btn_zoom_out;
-static lv_obj_t* btn_gps;
 static lv_obj_t* btn_route;
 static lv_obj_t* btn_del_route;
 static lv_obj_t* btn_search;
-static lv_obj_t* btn_mirror;
-
 static lv_obj_t* ico_gps;
 static lv_obj_t* ico_transport;
+static lv_obj_t* ico_mirror;
 static lv_obj_t* line_route;
 static lv_obj_t* keyboard;
 static lv_obj_t* ta_search;
 static lv_obj_t* lbl_toast;
 static lv_obj_t* lbl_distance;
 static lv_obj_t* lbl_tooltip;
+static lv_obj_t* lst_transport;
 
 static lv_point_precise_t* route_px;
 static Marker marker_me;
@@ -118,9 +116,11 @@ static Marker markers[ADDR_SEARCH_LIMIT];
 static std::vector<Tile> tiles;
 static std::vector<Location> route = {};
 static float distance = -1;
+static Transport transport;
 
 static lv_timer_t* hold_timer = nullptr;
 static bool is_hold_valid = false;
+static unsigned long last_drag_ms = 0;
 
 // proto
 static void updateMarkers(bool onlyMe = false);
@@ -128,7 +128,7 @@ static void updateMap(bool force = false);
 static void updateRoute();
 static void updateButtons();
 static void onClickMarker(lv_event_t* e);
-static void changeMapCenter(Location newLoc, int newZoom = zoom);
+static void changeMapCenter(Location newLoc, int newZoom);
 
 static void showSearchDialog(const bool visible) {
     if (visible) {
@@ -291,6 +291,15 @@ static void onTimerTick(lv_timer_t* _) {
     const auto angle_fixed = -static_cast<int16_t>((static_cast<int>(compass_angle) + COMPASS_ANGLE_CORRECTION) % 360 * 10);
     lv_image_set_rotation(marker_me.obj, angle_fixed);
     updateMarkers(true);
+
+    if (mtZoom.ready) {
+        int newZoom = zoom + mtZoom.direction;
+        if (newZoom <= ZOOM_MAX && zoom >= ZOOM_MIN) {
+            const Location newLoc = pointToLocation(mtZoom.center, centerLoc, zoom);
+            changeMapCenter(newLoc, newZoom);
+        }
+        mtZoom.ready = false;
+    }
 }
 
 static void onDragTile(lv_event_t* e) {
@@ -299,11 +308,12 @@ static void onDragTile(lv_event_t* e) {
     lv_point_t delta;
     lv_indev_get_vect(indev, &delta);
 
-    if (abs(delta.x) <= DRAG_THRESHOLD && abs(delta.y) <= DRAG_THRESHOLD) { return; }
+    if (abs(delta.x) <= DRAG_THRESHOLD && abs(delta.y) <= DRAG_THRESHOLD) return;
 
     const lv_point_t centerPx = locToPx(centerLoc, zoom);
     const lv_point_t newCenterPx = {centerPx.x - delta.x, centerPx.y - delta.y};
-    changeMapCenter(pxToLoc(newCenterPx, zoom));
+    changeMapCenter(pxToLoc(newCenterPx, zoom), zoom);
+    last_drag_ms = millis();
 }
 
 static void onClickZoom(lv_event_t* e) {
@@ -311,7 +321,6 @@ static void onClickZoom(lv_event_t* e) {
     int zoom_change = (btn == btn_zoom_in) ? 1 : -1;
     int new_zoom = zoom + zoom_change;
     if (new_zoom == zoom) return;
-    lv_cache_drop_all_cb_t();
     changeMapCenter(centerLoc, new_zoom);
 }
 
@@ -377,6 +386,8 @@ static void onClickTile(lv_event_t* e) {
     if (distance > 0) return;
 
     // check click to add target marker
+    if (millis() - last_drag_ms < AFTER_DRAG_TIME_THRESHOLD) return;
+
     if (code == LV_EVENT_PRESSED) {
         is_hold_valid = false;
         run_after(HOLD_TIME_THRESHOLD, is_hold_valid = true;)
@@ -392,7 +403,7 @@ static void onClickTile(lv_event_t* e) {
         lv_indev_get_vect(indev, &delta);
         if (abs(delta.x) > DRAG_THRESHOLD || abs(delta.y) > DRAG_THRESHOLD) return; // drag detected
 
-        // add target marker
+        // add target marker  todo: make fn selectTargetMarker()
         const auto* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
         for (const auto& t : tiles) {
             if (t.obj == obj) {
@@ -424,7 +435,7 @@ static void onClickRoute(lv_event_t* e) {
     run_after(100, {
               Location start = marker_me.loc;
               Location end = marker_selected ? marker_selected->loc : marker_target.loc;
-              writeBootState({CURRENT_BM_VER, ModeRoute, TransportAll,centerLoc, zoom, start, end});
+              writeBootState({CURRENT_BM_VER, ModeRoute, transport, centerLoc, zoom, start, end});
               esp_restart();
               })
 }
@@ -435,6 +446,7 @@ static void onClickDelRoute(lv_event_t* e) {
     distance = -1;
     updateButtons();
     lv_obj_del(line_route);
+    lv_obj_del(lbl_distance);
     hide(btn_del_route);
     show(btn_route);
 }
@@ -450,12 +462,28 @@ static void onClickSearch(lv_event_t* e) {
 static void onClickMirror(lv_event_t* e) {
     if (camEnabled) {
         Mirror_stop();
-        lv_obj_remove_state(btn_mirror, LV_STATE_PRESSED);
+        lv_obj_set_style_text_color(ico_mirror, COLOR_INACTIVE, 0);
         run_after(500, updateMap(true))
     } else {
         Mirror_start();
-        lv_obj_add_state(btn_mirror, LV_STATE_PRESSED);
+        lv_obj_set_style_text_color(ico_mirror, lv_color_black(), 0);
     }
+}
+
+static void onClickTransportList(lv_event_t* e) {
+    auto btn = static_cast<lv_obj_t*>(lv_event_get_target(e));
+    lv_obj_t* list = lv_obj_get_parent(btn);
+
+    if (lv_obj_check_type(list, &lv_list_class)) {
+        uint32_t index = lv_obj_get_index(btn);
+        transport = getTransportByIdx(index);
+        lv_label_set_text(ico_transport, getSymbolByTransport(transport));
+        hide(lst_transport);
+    }
+}
+
+static void onClickTransportIco(lv_event_t* e) {
+    show(lst_transport);
 }
 
 static void onStartSearch(lv_event_t* e) {
@@ -468,7 +496,7 @@ static void createRoute() {
     static lv_style_t style_line;
     lv_style_init(&style_line);
     lv_style_set_line_width(&style_line, 5);
-    lv_style_set_line_color(&style_line, lv_palette_main(LV_PALETTE_ORANGE));
+    lv_style_set_line_color(&style_line, COLOR_PRIMARY);
     lv_style_set_line_opa(&style_line, 150);
     lv_style_set_line_rounded(&style_line, true);
 
@@ -512,31 +540,22 @@ static void createMap() {
 }
 
 static void createButtons() {
-    int x = 10, y = 10, step = 50;
+    int x = SCREEN_WIDTH - 45, y = SCREEN_HEIGHT - 30, step = -45;
     btn_zoom_in = createBtn(SYMBOL_ZOOM_IN, x, y, onClickZoom);
-    y += step;
+    x += step;
     btn_zoom_out = createBtn(SYMBOL_ZOOM_OUT, x, y, onClickZoom);
-    y += step;
-    btn_gps = createBtn(SYMBOL_GPS, x, y, onClickGps);
-    y += step;
+    x += step;
     btn_route = createBtn(SYMBOL_ROUTE, x, y, onClickRoute);
     if (distance > 0) {
-        btn_del_route = createBtn(SYMBOL_DEL, x, y, onClickDelRoute);
-        const auto distanceText = String(distance, 1);
-        lbl_distance = lv_label_create(btn_del_route);
-        lv_label_set_text(lbl_distance, distanceText.c_str());
-        lv_obj_set_style_text_font(lbl_distance, &lv_font_montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_align(lbl_distance, LV_ALIGN_BOTTOM_MID, 0, 7);
-        lv_obj_align(lv_obj_get_child(btn_del_route, 0), LV_ALIGN_TOP_MID, 0, -7);
+        btn_del_route = createBtn(SYMBOL_DEL, x, y, onClickDelRoute, COLOR_SECONDARY);
         hide(btn_route);
     }
-    y += step;
+    x += step;
     btn_search = createBtn(SYMBOL_SEARCH, x, y, onClickSearch);
-    y += step;
-    btn_mirror = createBtn(SYMBOL_MIRROR, x, y, onClickMirror);
+    x += step;
 }
 
-static void createMarkers(Location me, Location target) {
+static void createMarkers(Location start, Location target) {
     const auto img2 = lv_img_create(lv_scr_act());
     lv_image_set_src(img2, &marker);
     lv_obj_center(img2);
@@ -558,7 +577,7 @@ static void createMarkers(Location me, Location target) {
     const auto img1 = lv_img_create(lv_scr_act());
     lv_image_set_src(img1, &compass);
     lv_obj_center(img1);
-    Location myLoc = me.lat != 0.0 ? me : centerLoc;
+    Location myLoc = start.lat != 0.0 ? start : centerLoc;
     marker_me = {img1, myLoc};
 }
 
@@ -569,10 +588,9 @@ static void createToast() {
     lv_obj_set_style_bg_color(lbl_toast, COLOR_SECONDARY, 0);
     lv_obj_set_style_bg_opa(lbl_toast, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(lbl_toast, 10, 0);
-    lv_obj_align(lbl_toast, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_align(lbl_toast, LV_ALIGN_TOP_MID, 0, 30);
     lv_obj_set_style_text_color(lbl_toast, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_radius(lbl_toast, 6, 0);
-
     hide(lbl_toast);
 }
 
@@ -621,23 +639,53 @@ static void createKeyboard() {
 }
 
 static void createStatusBar() {
-    int step = -30, x = -2, y = 2;
+    int step = -50, x = 0, y = 0;
 
-    ico_transport = lv_label_create(lv_scr_act());
-    lv_label_set_text(ico_transport, SYMBOL_ALL);
-    lv_obj_set_style_text_font(ico_transport, &icons, 0);
-    lv_obj_set_style_text_color(ico_transport,COLOR_PRIMARY, 0);
-    lv_obj_align(ico_transport, LV_ALIGN_TOP_RIGHT, x, y);
-    lv_obj_add_flag(ico_transport, LV_OBJ_FLAG_CLICKABLE);
-    x += step;
+    const auto bg = lv_label_create(lv_scr_act());
+    lv_obj_set_style_bg_color(bg, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(bg, LV_OPA_50, 0);
+    lv_obj_align(bg, LV_ALIGN_TOP_MID, 0, 0);
+    lv_label_set_text(bg, "");
+    lv_obj_set_size(bg, SCREEN_WIDTH, 30);
 
-    ico_gps = lv_label_create(lv_scr_act());
-    lv_label_set_text(ico_gps, SYMBOL_SATELLITE);
-    lv_obj_set_style_text_font(ico_gps, &icons, 0);
-    lv_obj_set_style_text_color(ico_gps,COLOR_INACTIVE, 0);
-    lv_obj_align(ico_gps, LV_ALIGN_TOP_RIGHT, x, y);
-    disable(ico_gps);
+    if (distance > 0) {
+        char buffer[20];
+        if (distance < 1.0) {
+            const int meters = static_cast<int>(distance * 1000);
+            snprintf(buffer, sizeof(buffer), "%d m", meters);
+        } else {
+            snprintf(buffer, sizeof(buffer), "%.1f km", distance);
+        }
+        lbl_distance = lv_label_create(lv_scr_act());
+        lv_label_set_text(lbl_distance, buffer);
+        lv_obj_set_style_text_color(lbl_distance, lv_color_black(), 0);
+        lv_obj_align(lbl_distance, LV_ALIGN_TOP_LEFT, 4, 6);
+    }
+
+    ico_transport = createStatusIcon(getSymbolByTransport(transport), x, y, onClickTransportIco);
     x += step;
+    ico_gps = createStatusIcon(SYMBOL_SATELLITE, x, y, onClickGps);
+    lv_obj_set_style_text_color(ico_gps, COLOR_INACTIVE, 0);
+    x += step;
+    ico_mirror = createStatusIcon(SYMBOL_MIRROR, x, y, onClickMirror);
+    lv_obj_set_style_text_color(ico_mirror, COLOR_INACTIVE, 0);
+    x += step;
+}
+
+void createTransportList() {
+    lst_transport = lv_list_create(lv_screen_active());
+    lv_obj_align(lst_transport, LV_ALIGN_TOP_RIGHT, -5, 20);
+    lv_obj_set_height(lst_transport, LV_SIZE_CONTENT);
+    lv_obj_t* btn;
+    btn = lv_list_add_button(lst_transport, NULL, "All");
+    lv_obj_add_event_cb(btn, onClickTransportList, LV_EVENT_CLICKED, NULL);
+    btn = lv_list_add_button(lst_transport, NULL, "Walk");
+    lv_obj_add_event_cb(btn, onClickTransportList, LV_EVENT_CLICKED, NULL);
+    btn = lv_list_add_button(lst_transport, NULL, "Bike");
+    lv_obj_add_event_cb(btn, onClickTransportList, LV_EVENT_CLICKED, NULL);
+    btn = lv_list_add_button(lst_transport, NULL, "Car");
+    lv_obj_add_event_cb(btn, onClickTransportList, LV_EVENT_CLICKED, NULL);
+    hide(lst_transport);
 }
 
 #ifdef DEBUG_VALUES
@@ -677,15 +725,17 @@ void Map_init(const BootState& state) {
     zoom = state.zoom;
     route = state.route;
     distance = state.distance;
+    transport = state.transport;
 
     createMap();
     createRoute();
-    createMarkers(state.center, state.end);
+    createMarkers(state.start, state.end);
     createButtons();
+    createStatusBar();
     createKeyboard();
     createToast();
-    createStatusBar();
     createTooltip();
+    createTransportList();
 
     changeMapCenter(state.center, state.zoom);
 
