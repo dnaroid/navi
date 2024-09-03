@@ -156,14 +156,14 @@ lv_point_precise_t locToCenterOffsetPPx(Location loc, Location centerLoc, int zo
  * @param loc2 The second geographical location.
  * @return The distance in kilometers between the two locations.
  */
-double haversineDistance(Location loc1, Location loc2) {
-  const double R = 6371; // Radius of the Earth in kilometers
-  double dLat = radians(loc2.lat - loc1.lat); // Difference in latitude in radians
-  double dLon = radians(loc2.lon - loc1.lon); // Difference in longitude in radians
-  double a = sin(dLat / 2) * sin(dLat / 2) +
+float haversineDistance(Location loc1, Location loc2) {
+  const float R = 6371; // Radius of the Earth in kilometers
+  float dLat = radians(loc2.lat - loc1.lat); // Difference in latitude in radians
+  float dLon = radians(loc2.lon - loc1.lon); // Difference in longitude in radians
+  float a = sin(dLat / 2) * sin(dLat / 2) +
     cos(radians(loc1.lat)) * cos(radians(loc2.lat)) *
     sin(dLon / 2) * sin(dLon / 2); // Haversine formula
-  double c = 2 * atan2(sqrt(a), sqrt(1 - a)); // Calculate the angular distance
+  float c = 2 * atan2(sqrt(a), sqrt(1 - a)); // Calculate the angular distance
   return R * c; // Return the distance in kilometers
 }
 

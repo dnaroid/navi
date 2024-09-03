@@ -64,6 +64,7 @@ extern bool camEnabled;
 struct Address {
     String name;
     Location location;
+    float distance;
 };
 
 struct Tile {
@@ -90,7 +91,8 @@ static char* zErrMsg = nullptr;
 static auto dbData = "Callback function called";
 
 static sqlite3* addrDb;
-static std::vector<Address> foundAddrs;
+static Address foundAddresses[ADDR_SEARCH_LIMIT];
+static int foundAddressesCount = 0;
 
 static lv_obj_t* btn_zoom_in;
 static lv_obj_t* btn_zoom_out;
@@ -164,21 +166,26 @@ static void searchAddress() {
         + "%' ORDER BY distance ASC, CAST(num AS INTEGER) ASC LIMIT "
         + ADDR_SEARCH_LIMIT;
     const char* queryCStr = query.c_str();
+    foundAddressesCount = 0;
     sqlite3_exec(addrDb, queryCStr,
                  [](void* data, int argc, char** argv, char** azColName) -> int {
                      const String name = String(argv[0]) + " " + String(argv[1]);
                      const float lon = atof(argv[2]);
                      const float lat = atof(argv[3]);
-                     foundAddrs.push_back(Address{name, {lon, lat}});
+                     foundAddresses[foundAddressesCount++] = {
+                         name,
+                         {lon, lat},
+                         haversineDistance({lon, lat}, marker_me.loc)
+                     };
                      return 0;
                  }, (void*)dbData, &zErrMsg);
     hide(lbl_toast);
-    if (foundAddrs.empty()) return;
+    if (foundAddressesCount == 0) return;
 
     int idx = 0;
     bbox_reset();
 
-    for (const auto& addr : foundAddrs) {
+    for (const auto& addr : foundAddresses) {
         show(markers[idx].obj);
         markers[idx++].loc = addr.location;
         bbox_compare(addr.location);
@@ -212,7 +219,7 @@ static void updateMarkers(bool onlyMe) {
         pos = locToCenterOffsetPx(marker_target.loc, centerLoc, zoom);
         lv_obj_set_pos(marker_target.obj, pos.x + MARKER_TARGET_OX, pos.y + MARKER_TARGET_OY);
     }
-    for (int idx = 0; idx < foundAddrs.size(); idx++) {
+    for (int idx = 0; idx < foundAddressesCount; idx++) {
         pos = locToCenterOffsetPx(markers[idx].loc, centerLoc, zoom);
         lv_obj_set_pos(markers[idx].obj, pos.x + MARKER_TARGET_OX, pos.y + MARKER_TARGET_OY);
     }
@@ -337,9 +344,23 @@ static void onClickMarker(lv_event_t* e) {
                 changeMapCenter(m.loc, ZOOM_DEFAULT);
             } else { // first click
                 marker_selected = &m;
+
+                const char* name = foundAddresses[idx].name.c_str();
+                size_t name_length = strlen(name);
+                char buffer[name_length + 20];
+
+                float distance = foundAddresses[idx].distance;
+                if (distance < 1.0) {
+                    const int meters = static_cast<int>(distance * 1000);
+                    snprintf(buffer, sizeof(buffer), "%s\n%d m", name, meters);
+                } else {
+                    snprintf(buffer, sizeof(buffer), "%s\n%.1f km", name, distance);
+                }
+                lv_label_set_text(lbl_tooltip, buffer);
+
+
                 lv_obj_set_style_img_recolor_opa(marker_selected->obj, LV_OPA_COVER, 0);
                 lv_obj_set_style_img_recolor(marker_selected->obj, COLOR_SECONDARY, 0);
-                lv_label_set_text_static(lbl_tooltip, foundAddrs[idx].name.c_str());
                 lv_obj_align_to(lbl_tooltip, obj, LV_ALIGN_OUT_TOP_MID, 0, -5);
 
                 lv_coord_t max_width = SCREEN_WIDTH - 20;
