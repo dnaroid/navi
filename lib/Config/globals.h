@@ -20,6 +20,7 @@ extern float compass_angle;
 extern Location my_gps_location;
 
 #define ZOOM_DEFAULT 16
+#define ZOOM_TRIP 17
 
 /// --- pins
 #define SD_CS    7
@@ -43,7 +44,7 @@ extern Location my_gps_location;
 #define ZOOM_MAX 18
 
 /// --- compass
-#define COMPASS_ANGLE_CORRECTION (90)
+#define COMPASS_ANGLE_CORRECTION (180)
 
 /// --- timing
 #define COMPASS_UPD_SKIPS 2
@@ -68,7 +69,7 @@ void println(Args... args) {
   Serial.println();
 }
 
-#ifdef RELEASE
+#ifndef DEBUG
 #define START_SERIAL
 #define LOG(...)
 #define LOGI(...)

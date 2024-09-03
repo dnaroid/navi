@@ -71,7 +71,7 @@ lv_obj_t* createStatusIcon(const char* label, const int32_t x, const int32_t y, 
   lv_obj_set_style_pad_ver(ico, 5, 0);
   lv_label_set_text(ico, label);
   lv_obj_set_style_text_font(ico, &icons, 0);
-  lv_obj_set_style_text_color(ico, lv_color_black(), 0);
+  lv_obj_set_style_text_color(ico, lv_palette_main(LV_PALETTE_BLUE), 0);
   lv_obj_align(ico, LV_ALIGN_TOP_RIGHT, x, y);
   if (onClick) {
     lv_obj_add_flag(ico, LV_OBJ_FLAG_CLICKABLE);
@@ -199,3 +199,10 @@ Location pointToLocation(lv_point_t point, Location cursorLoc, int zoom) {
   return pxToLoc({pixelX, pixelY}, zoom); // Convert adjusted pixel coordinates back to geographical location
 }
 
+float getDistanceMeters(Location loc1, Location loc2) {
+  const float R = 6371000;
+  float dLat = radians(loc2.lat - loc1.lat);
+  float dLon = radians(loc2.lon - loc1.lon);
+  float a = dLat * dLat + dLon * dLon * cos(radians(loc1.lat)) * cos(radians(loc2.lat));
+  return R * sqrt(a);
+}

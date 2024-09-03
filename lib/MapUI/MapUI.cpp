@@ -25,6 +25,7 @@ static int DEBUG_VALUE_2 = 0;
 LV_IMG_DECLARE(marker)
 LV_IMG_DECLARE(compass)
 LV_FONT_DECLARE(montserrat_14_pl)
+// npx lv_font_conv --bpp 4 --size 20 --no-compress --font /Users/buzz/WORK/icons.ttf --range 0x30-0x3d --format lvgl -o /Users/buzz/Projects/navi_c++/lib/fonts/icons.c
 
 #define SYMBOL_ZOOM_IN   "0"
 #define SYMBOL_ZOOM_OUT  "1"
@@ -33,7 +34,7 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define SYMBOL_ROUTE     "4"
 #define SYMBOL_SEARCH    "5"
 #define SYMBOL_MIRROR    "6"
-#define SYMBOL_EXIT      "7"
+#define SYMBOL_TRIP      "7"
 #define SYMBOL_SATELLITE "8"
 #define SYMBOL_ALL       "9"
 #define SYMBOL_BIKE      ":"
@@ -99,6 +100,7 @@ static lv_obj_t* btn_zoom_out;
 static lv_obj_t* btn_route;
 static lv_obj_t* btn_del_route;
 static lv_obj_t* btn_search;
+static lv_obj_t* btn_trip;
 static lv_obj_t* ico_gps;
 static lv_obj_t* ico_transport;
 static lv_obj_t* ico_mirror;
@@ -122,6 +124,7 @@ static Transport transport;
 
 static lv_timer_t* hold_timer = nullptr;
 static bool is_hold_valid = false;
+static bool tripMode = false;
 static unsigned long last_drag_ms = 0;
 
 // proto
@@ -278,7 +281,7 @@ static void updateButtons() {
 }
 
 static void onGpsFound() {
-    lv_obj_set_style_text_color(ico_gps,COLOR_PRIMARY, 0);
+    lv_obj_set_style_text_color(ico_gps, COLOR_PRIMARY, 0);
 }
 
 static void onGpsLost() {
@@ -288,6 +291,9 @@ static void onGpsLost() {
 static void onTimerTick(lv_timer_t* _) {
     if (my_gps_location.lon != 0) {
         marker_me.loc = my_gps_location;
+        if (tripMode && getDistanceMeters(my_gps_location, centerLoc) > 2) {
+            changeMapCenter(my_gps_location, zoom);
+        }
         if (!prevGpsStateReady) onGpsFound();
         prevGpsStateReady = true;
     } else {
@@ -342,48 +348,48 @@ static void onClickMarker(lv_event_t* e) {
             }
             if (marker_selected == &m) { // second click
                 changeMapCenter(m.loc, ZOOM_DEFAULT);
-            } else { // first click
-                marker_selected = &m;
-
-                const char* name = foundAddresses[idx].name.c_str();
-                size_t name_length = strlen(name);
-                char buffer[name_length + 20];
-
-                float distance = foundAddresses[idx].distance;
-                if (distance < 1.0) {
-                    const int meters = static_cast<int>(distance * 1000);
-                    snprintf(buffer, sizeof(buffer), "%s\n%d m", name, meters);
-                } else {
-                    snprintf(buffer, sizeof(buffer), "%s\n%.1f km", name, distance);
-                }
-                lv_label_set_text(lbl_tooltip, buffer);
-
-
-                lv_obj_set_style_img_recolor_opa(marker_selected->obj, LV_OPA_COVER, 0);
-                lv_obj_set_style_img_recolor(marker_selected->obj, COLOR_SECONDARY, 0);
-                lv_obj_align_to(lbl_tooltip, obj, LV_ALIGN_OUT_TOP_MID, 0, -5);
-
-                lv_coord_t max_width = SCREEN_WIDTH - 20;
-
-                lv_obj_set_width(lbl_tooltip, LV_SIZE_CONTENT);
-                if (lv_obj_get_width(lbl_tooltip) > max_width) lv_obj_set_width(lbl_tooltip, max_width);
-                lv_obj_align_to(lbl_tooltip, obj, LV_ALIGN_OUT_TOP_MID, 0, -5);
-                lv_area_t tooltip_area;
-                lv_obj_get_coords(lbl_tooltip, &tooltip_area);
-
-                if (tooltip_area.y1 < 10) {
-                    lv_obj_align_to(lbl_tooltip, obj, LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
-                }
-
-                if (tooltip_area.x1 < 0) {
-                    lv_obj_set_x(lbl_tooltip, 10);
-                } else if (tooltip_area.x2 > SCREEN_WIDTH) {
-                    lv_obj_set_x(lbl_tooltip, SCREEN_WIDTH - lv_obj_get_width(lbl_tooltip) - 10);
-                }
-                hide(marker_target.obj);
-                show(lbl_tooltip);
-                break;
             }
+            // first click
+            marker_selected = &m;
+
+            const char* name = foundAddresses[idx].name.c_str();
+            size_t name_length = strlen(name);
+            char buffer[name_length + 20];
+
+            float distance = foundAddresses[idx].distance;
+            if (distance < 1.0) {
+                const int meters = static_cast<int>(distance * 1000);
+                snprintf(buffer, sizeof(buffer), "%s\n%d m", name, meters);
+            } else {
+                snprintf(buffer, sizeof(buffer), "%s\n%.1f km", name, distance);
+            }
+            lv_label_set_text(lbl_tooltip, buffer);
+
+
+            lv_obj_set_style_img_recolor_opa(marker_selected->obj, LV_OPA_COVER, 0);
+            lv_obj_set_style_img_recolor(marker_selected->obj, COLOR_SECONDARY, 0);
+            lv_obj_align_to(lbl_tooltip, obj, LV_ALIGN_OUT_TOP_MID, 0, -5);
+
+            lv_coord_t max_width = SCREEN_WIDTH - 20;
+
+            lv_obj_set_width(lbl_tooltip, LV_SIZE_CONTENT);
+            if (lv_obj_get_width(lbl_tooltip) > max_width) lv_obj_set_width(lbl_tooltip, max_width);
+            lv_obj_align_to(lbl_tooltip, obj, LV_ALIGN_OUT_TOP_MID, 0, -5);
+            lv_area_t tooltip_area;
+            lv_obj_get_coords(lbl_tooltip, &tooltip_area);
+
+            if (tooltip_area.y1 < 10) {
+                lv_obj_align_to(lbl_tooltip, obj, LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
+            }
+
+            if (tooltip_area.x1 < 0) {
+                lv_obj_set_x(lbl_tooltip, 10);
+            } else if (tooltip_area.x2 > SCREEN_WIDTH) {
+                lv_obj_set_x(lbl_tooltip, SCREEN_WIDTH - lv_obj_get_width(lbl_tooltip) - 10);
+            }
+            hide(marker_target.obj);
+            show(lbl_tooltip);
+            break;
         }
         idx++;
     }
@@ -487,8 +493,14 @@ static void onClickMirror(lv_event_t* e) {
         run_after(500, updateMap(true))
     } else {
         Mirror_start();
-        lv_obj_set_style_text_color(ico_mirror, lv_color_black(), 0);
+        lv_obj_set_style_text_color(ico_mirror, COLOR_PRIMARY, 0);
     }
+}
+
+static void onClickTrip(lv_event_t* e) {
+    tripMode = !tripMode;
+    if (tripMode) changeMapCenter(marker_me.loc, ZOOM_TRIP);
+    lv_obj_set_style_text_color(btn_trip, tripMode ? COLOR_PRIMARY : COLOR_INACTIVE, 0);
 }
 
 static void onClickTransportList(lv_event_t* e) {
@@ -566,14 +578,11 @@ static void createButtons() {
     x += step;
     btn_zoom_out = createBtn(SYMBOL_ZOOM_OUT, x, y, onClickZoom);
     x += step;
-    btn_route = createBtn(SYMBOL_ROUTE, x, y, onClickRoute);
-    if (distance > 0) {
-        btn_del_route = createBtn(SYMBOL_DEL, x, y, onClickDelRoute, COLOR_SECONDARY);
-        hide(btn_route);
-    }
-    x += step;
     btn_search = createBtn(SYMBOL_SEARCH, x, y, onClickSearch);
     x += step;
+    btn_route = createBtn(SYMBOL_ROUTE, x, y, onClickRoute);
+    if (distance > 0)
+        hide(btn_route);
 }
 
 static void createMarkers(Location start, Location target) {
@@ -680,7 +689,11 @@ static void createStatusBar() {
         lbl_distance = lv_label_create(lv_scr_act());
         lv_label_set_text(lbl_distance, buffer);
         lv_obj_set_style_text_color(lbl_distance, lv_color_black(), 0);
-        lv_obj_align(lbl_distance, LV_ALIGN_TOP_LEFT, 4, 6);
+        lv_obj_align(lbl_distance, LV_ALIGN_TOP_LEFT, 34, 8);
+
+        btn_del_route = createStatusIcon(SYMBOL_DEL, 0, 0, onClickDelRoute);
+        lv_obj_align(btn_del_route, LV_ALIGN_TOP_LEFT, -10, y);
+        lv_obj_set_style_text_color(btn_del_route, lv_palette_main(LV_PALETTE_RED), 0);
     }
 
     ico_transport = createStatusIcon(getSymbolByTransport(transport), x, y, onClickTransportIco);
@@ -691,6 +704,10 @@ static void createStatusBar() {
     ico_mirror = createStatusIcon(SYMBOL_MIRROR, x, y, onClickMirror);
     lv_obj_set_style_text_color(ico_mirror, COLOR_INACTIVE, 0);
     x += step;
+    if (distance > 0) {
+        btn_trip = createStatusIcon(SYMBOL_TRIP, x, y, onClickTrip);
+        lv_obj_set_style_text_color(btn_trip, COLOR_INACTIVE, 0);
+    }
 }
 
 void createTransportList() {

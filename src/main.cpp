@@ -50,6 +50,10 @@ void updateCompassAndGpsTask(void* pvParameters) {
         my_gps_location.lat = gpsLat;
         my_gps_location.lon = gpsLon;
       }
+      if (!gps.location.isValid()) {
+        my_gps_location.lat = 0;
+        my_gps_location.lon = 0;
+      }
       gpsSkips = 0;
     }
     Mirror_loop();
