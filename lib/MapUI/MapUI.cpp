@@ -229,7 +229,9 @@ static void updateMarkers(bool onlyMe) {
 }
 
 static void updateRoute() {
-    if (route.empty()) { return; }
+    if (route.empty()) return;
+    if (tripMode) updateRouteProgress(my_gps_location, route);
+
     int idx = 0;
     for (auto& loc : route) {
         route_px[idx++] = locToCenterOffsetPPx(loc, centerLoc, zoom);
@@ -289,10 +291,14 @@ static void onGpsLost() {
 }
 
 static void onTimerTick(lv_timer_t* _) {
+    bool needUpdGpsMarker = false;
+
     if (my_gps_location.lon != 0) {
         marker_me.loc = my_gps_location;
         if (tripMode && getDistanceMeters(my_gps_location, centerLoc) > 2) {
             changeMapCenter(my_gps_location, zoom);
+        } else {
+            needUpdGpsMarker = true;
         }
         if (!prevGpsStateReady) onGpsFound();
         prevGpsStateReady = true;
@@ -303,7 +309,7 @@ static void onTimerTick(lv_timer_t* _) {
 
     const auto angle_fixed = -static_cast<int16_t>((static_cast<int>(compass_angle) + COMPASS_ANGLE_CORRECTION) % 360 * 10);
     lv_image_set_rotation(marker_me.obj, angle_fixed);
-    updateMarkers(true);
+    updateMarkers(!needUpdGpsMarker);
 
     if (mtZoom.ready) {
         int newZoom = zoom + mtZoom.direction;
@@ -410,7 +416,7 @@ static void onClickTile(lv_event_t* e) {
         return;
     }
 
-    if (distance > 0) return;
+    if (!tripMode && distance > 0) return;
 
     // check click to add target marker
     if (millis() - last_drag_ms < AFTER_DRAG_TIME_THRESHOLD) return;
@@ -430,12 +436,19 @@ static void onClickTile(lv_event_t* e) {
         lv_indev_get_vect(indev, &delta);
         if (abs(delta.x) > DRAG_THRESHOLD || abs(delta.y) > DRAG_THRESHOLD) return; // drag detected
 
+
         // add target marker  todo: make fn selectTargetMarker()
         const auto* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
+        lv_point_t point;
+        lv_indev_get_point(lv_indev_get_act(), &point);
+
+        if (tripMode) {
+            my_gps_location = pointToLocation(point, centerLoc, zoom);
+            return;
+        }
+
         for (const auto& t : tiles) {
             if (t.obj == obj) {
-                lv_point_t point;
-                lv_indev_get_point(lv_indev_get_act(), &point);
                 marker_target.loc = pointToLocation(point, centerLoc, zoom);
                 LOGF("%.6f, %.6f\n", marker_target.loc.lon, marker_target.loc.lat);
                 show(marker_target.obj);

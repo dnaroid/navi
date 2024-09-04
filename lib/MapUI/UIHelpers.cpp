@@ -2,6 +2,8 @@
 #include "lvgl.h"
 #include "BootManager.h"
 
+#define TRIP_MODE_TOLERANCE_M 20.0
+
 LV_FONT_DECLARE(icons)
 
 #define hidden(obj)          (lv_obj_has_flag((obj), LV_OBJ_FLAG_HIDDEN))
@@ -205,4 +207,44 @@ float getDistanceMeters(Location loc1, Location loc2) {
   float dLon = radians(loc2.lon - loc1.lon);
   float a = dLat * dLat + dLon * dLon * cos(radians(loc1.lat)) * cos(radians(loc2.lat));
   return R * sqrt(a);
+}
+
+float pointToLineDistance(Location p, Location p1, Location p2, Location& intersection) {
+  float A = p.lat - p1.lat;
+  float B = p.lon - p1.lon;
+  float C = p2.lat - p1.lat;
+  float D = p2.lon - p1.lon;
+
+  float dot = A * C + B * D;
+  float len_sq = C * C + D * D;
+  float param = (len_sq != 0) ? dot / len_sq : -1;
+
+  if (param < 0) {
+    intersection = p1;
+  } else if (param > 1) {
+    intersection = p2;
+  } else {
+    intersection.lat = p1.lat + param * C;
+    intersection.lon = p1.lon + param * D;
+  }
+
+  float dx = p.lat - intersection.lat;
+  float dy = p.lon - intersection.lon;
+  return sqrt(dx * dx + dy * dy) * 111320;
+}
+
+void updateRouteProgress(Location my_location, std::vector<Location>& route) {
+  for (size_t i = 0; i < route.size() - 1; ++i) {
+    Location p1 = route[i];
+    Location p2 = route[i + 1];
+    Location intersection;
+
+    float distance = pointToLineDistance(my_location, p1, p2, intersection);
+
+    if (distance <= TRIP_MODE_TOLERANCE_M) {
+      route[i + 1] = intersection;
+      route.erase(route.begin(), route.begin() + i + 1);
+      break;
+    }
+  }
 }
