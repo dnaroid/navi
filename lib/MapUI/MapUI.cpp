@@ -416,7 +416,8 @@ static void onClickTile(lv_event_t* e) {
         return;
     }
 
-    if (!tripMode && distance > 0) return;
+    if (distance > 0) return;
+    // if (!tripMode && distance > 0) return; // gps debug
 
     // check click to add target marker
     if (millis() - last_drag_ms < AFTER_DRAG_TIME_THRESHOLD) return;
@@ -436,16 +437,15 @@ static void onClickTile(lv_event_t* e) {
         lv_indev_get_vect(indev, &delta);
         if (abs(delta.x) > DRAG_THRESHOLD || abs(delta.y) > DRAG_THRESHOLD) return; // drag detected
 
-
         // add target marker  todo: make fn selectTargetMarker()
         const auto* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
         lv_point_t point;
         lv_indev_get_point(lv_indev_get_act(), &point);
 
-        if (tripMode) {
-            my_gps_location = pointToLocation(point, centerLoc, zoom);
-            return;
-        }
+        // if (tripMode) { // gps debug
+        //     my_gps_location = pointToLocation(point, centerLoc, zoom);
+        //     return;
+        // }
 
         for (const auto& t : tiles) {
             if (t.obj == obj) {
