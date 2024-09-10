@@ -44,14 +44,11 @@ extern Location my_gps_location;
 #define ZOOM_MAX 18
 
 /// --- compass
-#define COMPASS_ANGLE_CORRECTION (180)
+#define COMPASS_ANGLE_CORRECTION (-90)
 
-/// --- timing
-#define COMPASS_UPD_SKIPS 2
-#define GPS_UPD_SKIPS 100
-
-/// remote
-#define IMAGE_CAPTURE_URL "http://192.168.4.1/jpg"
+/// --- timing x(1/100 sec)
+#define COMPASS_UPD_SKIPS 1
+#define GPS_UPD_SKIPS 5
 
 inline void print() {
 }

@@ -8,6 +8,8 @@ char report[80];
 
 void setup() {
   Serial.begin(9600);
+
+
   Wire.begin(1,2,0);
   compass.init();
   compass.enableDefault();

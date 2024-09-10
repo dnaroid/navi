@@ -8,9 +8,9 @@
 #include "MapUI.h"
 #include "Touch.h"
 #include "Display.h"
-#include "Mirror.h"
 #include "BootManager.h"
 #include "TinyGPSPlus.h"
+#include "compass_calibrate.h"
 
 #include "../lv_conf.h"
 
@@ -18,19 +18,16 @@
 float compass_angle;
 Location my_gps_location = {0, 0};
 
-TinyGPSPlus gps;
-LSM303 compass;
-HardwareSerial gpsSerial(1);
-
-SemaphoreHandle_t xGuiSemaphore;
-
+static TinyGPSPlus gps;
+static LSM303 compass;
+static HardwareSerial gpsSerial(1);
+static auto spiShared = SPIClass(HSPI);
 static BootState state;
 static Mode mode = ModeMap;
 static PathFinder pf;
 
-auto spiShared = SPIClass(HSPI);
-int gpsSkips = 0;
-int compassSkips = 0;
+static int gpsSkips = 0;
+static int compassSkips = 0;
 
 void updateCompassAndGpsTask(void* pvParameters) {
   while (true) {
@@ -56,8 +53,7 @@ void updateCompassAndGpsTask(void* pvParameters) {
       }
       gpsSkips = 0;
     }
-    Mirror_loop();
-    delay(10);
+    delay(100);
   }
 }
 
@@ -83,8 +79,6 @@ void setup() {
 
   switch (mode) {
   case ModeMap:
-    xGuiSemaphore = xSemaphoreCreateMutex();
-
     Display_init();
 
     Wire.begin(I2C_SDA, I2C_SCL, 0);
@@ -92,8 +86,17 @@ void setup() {
     LOGI("Init Compass");
     compass.init();
     compass.enableDefault();
-    compass.m_min = (LSM303::vector<int16_t>){-686, -545, -4};
-    compass.m_max = (LSM303::vector<int16_t>){+331, +353, +4};
+    if (!loadCalibrationData(compass)) {
+      TFT_eSPI tft;
+      tft.init();
+      tft.fillScreen(TFT_BLACK);
+      tft.setTextColor(TFT_WHITE);
+      tft.setCursor(0, 12);
+      tft.println("Compass is not calibrated!");
+      tft.println("Rotate the devices along all axes for 10 seconds...");
+      calibrateCompass(compass);
+      esp_restart();
+    }
     LOG(" ok");
 
     LOGI("Init GPS");
@@ -121,10 +124,5 @@ void setup() {
 }
 
 void loop() {
-  if (mode == ModeMap) {
-    if (xSemaphoreTake(xGuiSemaphore, portMAX_DELAY) == pdTRUE) {
-      lv_timer_handler();
-      xSemaphoreGive(xGuiSemaphore);
-    }
-  }
+  lv_timer_handler();
 }

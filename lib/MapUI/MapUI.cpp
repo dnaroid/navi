@@ -7,7 +7,6 @@
 #include <sqlite3.h>
 #include <sstream>
 #include <vector>
-#include "Mirror.h"
 #include "montserrat_14_pl.c"
 #include "marker.c"
 #include "compass.c"
@@ -33,7 +32,6 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define SYMBOL_GPS       "3"
 #define SYMBOL_ROUTE     "4"
 #define SYMBOL_SEARCH    "5"
-#define SYMBOL_MIRROR    "6"
 #define SYMBOL_TRIP      "7"
 #define SYMBOL_SATELLITE "8"
 #define SYMBOL_ALL       "9"
@@ -103,7 +101,6 @@ static lv_obj_t* btn_search;
 static lv_obj_t* btn_trip;
 static lv_obj_t* ico_gps;
 static lv_obj_t* ico_transport;
-static lv_obj_t* ico_mirror;
 static lv_obj_t* line_route;
 static lv_obj_t* keyboard;
 static lv_obj_t* ta_search;
@@ -499,17 +496,6 @@ static void onClickSearch(lv_event_t* e) {
     showSearchDialog(true);
 }
 
-static void onClickMirror(lv_event_t* e) {
-    if (camEnabled) {
-        Mirror_stop();
-        lv_obj_set_style_text_color(ico_mirror, COLOR_INACTIVE, 0);
-        run_after(500, updateMap(true))
-    } else {
-        Mirror_start();
-        lv_obj_set_style_text_color(ico_mirror, COLOR_PRIMARY, 0);
-    }
-}
-
 static void onClickTrip(lv_event_t* e) {
     tripMode = !tripMode;
     if (tripMode) changeMapCenter(marker_me.loc, ZOOM_TRIP);
@@ -713,9 +699,6 @@ static void createStatusBar() {
     x += step;
     ico_gps = createStatusIcon(SYMBOL_SATELLITE, x, y, onClickGps);
     lv_obj_set_style_text_color(ico_gps, COLOR_INACTIVE, 0);
-    x += step;
-    ico_mirror = createStatusIcon(SYMBOL_MIRROR, x, y, onClickMirror);
-    lv_obj_set_style_text_color(ico_mirror, COLOR_INACTIVE, 0);
     x += step;
     if (distance > 0) {
         btn_trip = createStatusIcon(SYMBOL_TRIP, x, y, onClickTrip);
