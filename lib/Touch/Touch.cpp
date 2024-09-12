@@ -2,18 +2,22 @@
 #include <globals.h>
 #include <Wire.h>
 #include <indev/lv_indev.h>
-#include <misc/lv_types.h>
+
+MultiTouchData mtZoom;
+static lv_point_t last_points[2];
+
+#ifdef MINI_TFT
+#include "CST816S.h"
+
+CST816S touch(I2C_SDA, I2C_SCL, 16, 17);
+#else
 #include <bb_captouch.h>
 
-BBCapTouch bbct;
-int i;
-TOUCHINFO ti;
-
-static lv_point_t last_points[2];
+static BBCapTouch bbct;
+static TOUCHINFO ti;
 static bool is_multiTouch = false;
 static float last_distance = 0.0;
 static int active_touches = 0;
-MultiTouchData mtZoom;
 
 float get_distance(const lv_point_t p1, const lv_point_t p2) {
   int delta_x = p2.x - p1.x;
@@ -21,9 +25,22 @@ float get_distance(const lv_point_t p1, const lv_point_t p2) {
   return std::sqrt(delta_x * delta_x + delta_y * delta_y);
 }
 
-static void my_touchpad_read(lv_indev_t* indev, lv_indev_data_t* data) {
-  bbct.getSamples(&ti);
+#endif
 
+static void my_touchpad_read(lv_indev_t* indev, lv_indev_data_t* data) {
+#ifdef MINI_TFT
+  if (touch.available()) {
+    last_points[0].x = touch.data.x;
+    last_points[0].y = touch.data.y;
+    data->state = LV_INDEV_STATE_PRESSED;
+  } else {
+    data->state = LV_INDEV_STATE_RELEASED;
+  }
+  data->point.x = last_points[0].x;
+  data->point.y = last_points[0].y;
+
+#else
+  bbct.getSamples(&ti);
   active_touches = ti.count;
 
   if (active_touches > 0) {
@@ -59,12 +76,19 @@ static void my_touchpad_read(lv_indev_t* indev, lv_indev_data_t* data) {
     is_multiTouch = false;
     last_distance = 0.0;
   }
+#endif
 }
 
 void Touch_init() {
   LOGI("Init Touch ");
   delay(100);
+#ifdef MINI_TFT
+  last_points[0].x = 0;
+  last_points[0].y = 0;
+  touch.begin();
+#else
   bbct.init(I2C_SDA, I2C_SCL, -1, -1);
+#endif
 
   lv_indev_t* indev = lv_indev_create();
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);

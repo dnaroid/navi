@@ -44,7 +44,7 @@ Transport getTransportByIdx(int index) {
 
 lv_obj_t* createBtn(const char* label, const int32_t x, const int32_t y, const lv_event_cb_t onClick, lv_color_t color = lv_color_white()) {
   auto btn = lv_btn_create(lv_scr_act());
-  lv_obj_set_size(btn, 40, 26);
+  lv_obj_set_size(btn, BUTTON_W, BUTTON_H);
   lv_obj_align(btn, LV_ALIGN_TOP_LEFT, x, y);
   lv_obj_t* lbl = lv_label_create(btn);
   lv_label_set_text(lbl, label);

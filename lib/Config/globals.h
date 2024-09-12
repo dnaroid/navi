@@ -5,11 +5,13 @@
 
 #define LV_LVGL_H_INCLUDE_SIMPLE
 
-#define WIFI_SSID "ESP32-SCOOTER"
-#define WIFI_PASSWORD "UoAcYyo5FErnjXk"
-
 #define INIT_LAT 54.3520
 #define INIT_LON 18.6466
+
+#define ZOOM_DEFAULT 16
+#define ZOOM_TRIP 17
+#define ZOOM_MIN 12
+#define ZOOM_MAX 18
 
 struct Location {
   float lon;
@@ -19,10 +21,16 @@ struct Location {
 extern float compass_angle;
 extern Location my_gps_location;
 
-#define ZOOM_DEFAULT 16
-#define ZOOM_TRIP 17
-
 /// --- pins
+#ifdef MINI_TFT
+#define SD_CS   38
+#define SD_MOSI 39
+#define SD_SCK  40
+#define SD_MISO 41
+
+#define I2C_SDA  6
+#define I2C_SCL  7
+#else
 #define SD_CS    7
 #define SD_MOSI 11
 #define SD_SCK  12
@@ -30,18 +38,30 @@ extern Location my_gps_location;
 
 #define I2C_SDA 18
 #define I2C_SCL  9
+#endif
 
 #define GPS_RX 47
 #define GPS_TX 48
 
 /// --- screen
+#ifdef MINI_TFT
+#define SCREEN_WIDTH 240
+#define SCREEN_HEIGHT 280
+#define BUTTON_W 50
+#define BUTTON_H 35
+#define BUTTONS_R_OFFSET 15
+#else
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 480
+#define BUTTON_W 40
+#define BUTTON_H 26
+#define BUTTONS_R_OFFSET 5
+#endif
 #define SCREEN_CENTER_X (SCREEN_WIDTH/2)
 #define SCREEN_CENTER_Y (SCREEN_HEIGHT/2)
 #define TILE_SIZE 256
-#define ZOOM_MIN 12
-#define ZOOM_MAX 18
+
+#define IDLE_TIME_MS 10000
 
 /// --- compass
 #define COMPASS_ANGLE_CORRECTION (-90)

@@ -82,6 +82,11 @@ struct Marker {
     Location loc;
 };
 
+static int lastT9LetterIdx = 0;
+static char lastT9Key[5] = {};
+static unsigned long lastT9pressedMs = 0;
+#define T9_TIMEOUT 3000
+
 static Location centerLoc;
 static bool prevGpsStateReady = false;
 static int zoom = 0;
@@ -413,6 +418,11 @@ static void onClickTile(lv_event_t* e) {
         return;
     }
 
+    if (visible(lst_transport)) {
+        hide(lst_transport);
+        return;
+    }
+
     if (distance > 0) return;
     // if (!tripMode && distance > 0) return; // gps debug
 
@@ -447,7 +457,7 @@ static void onClickTile(lv_event_t* e) {
         for (const auto& t : tiles) {
             if (t.obj == obj) {
                 marker_target.loc = pointToLocation(point, centerLoc, zoom);
-                LOGF("%.6f, %.6f\n", marker_target.loc.lon, marker_target.loc.lat);
+                // LOGF("%.6f, %.6f\n", marker_target.loc.lon, marker_target.loc.lat);
                 show(marker_target.obj);
 
                 if (marker_selected != nullptr) {
@@ -524,6 +534,40 @@ static void onStartSearch(lv_event_t* e) {
     run_after(100, searchAddress())
 }
 
+static void onClickT9(lv_event_t* e) {
+    const auto key_id = lv_buttonmatrix_get_selected_button(keyboard);
+    const char* keyTxt = lv_buttonmatrix_get_button_text(keyboard, key_id);
+
+    if (strcmp(keyTxt, LV_SYMBOL_BACKSPACE) == 0) {
+        lv_textarea_delete_char(ta_search);
+        return;
+    }
+
+    if (strcmp(keyTxt, LV_SYMBOL_OK) == 0 && strlen(lv_textarea_get_text(ta_search)) > 3) {
+        onStartSearch(NULL);
+        return;
+    }
+
+    if (strcmp(keyTxt, " ") == 0) {
+        lv_textarea_add_char(ta_search, ' ');
+        return;
+    }
+
+    const auto currentTime = millis();
+    const auto timeDiff = currentTime - lastT9pressedMs;
+
+    if (strcmp(keyTxt, lastT9Key) != 0 || timeDiff > T9_TIMEOUT) {
+        lastT9LetterIdx = 0;
+    } else {
+        lastT9LetterIdx++;
+        lv_textarea_delete_char(ta_search);
+    }
+
+    lv_textarea_add_char(ta_search, keyTxt[lastT9LetterIdx % strlen(keyTxt)]);
+    strcpy(lastT9Key, keyTxt);
+    lastT9pressedMs = currentTime;
+}
+
 static void createRoute() {
     static lv_style_t style_line;
     lv_style_init(&style_line);
@@ -572,7 +616,7 @@ static void createMap() {
 }
 
 static void createButtons() {
-    int x = SCREEN_WIDTH - 45, y = SCREEN_HEIGHT - 30, step = -45;
+    int x = SCREEN_WIDTH - BUTTON_W - BUTTONS_R_OFFSET, y = SCREEN_HEIGHT - BUTTON_H - 2, step = -BUTTON_W - 2;
     btn_zoom_in = createBtn(SYMBOL_ZOOM_IN, x, y, onClickZoom);
     x += step;
     btn_zoom_out = createBtn(SYMBOL_ZOOM_OUT, x, y, onClickZoom);
@@ -639,6 +683,20 @@ static void createTooltip() {
 }
 
 static void createKeyboard() {
+#ifdef MINI_TFT
+    static const char* kb_map[] = {
+        "ABC1", "DEF2", "GHI3", "\n",
+        "JKL4", "MNO5", "PQR6", "\n",
+        "STU7", "VWX8", "YZ90", "\n",
+        " ", LV_SYMBOL_BACKSPACE, LV_SYMBOL_OK, NULL
+    };
+    static const lv_buttonmatrix_ctrl_t kb_ctrl[] = {
+        1, 1, 1,
+        1, 1, 1,
+        1, 1, 1,
+        1, 1, 1
+    };
+#else
     static const char* kb_map[] = {
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n",
         "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "\n",
@@ -652,17 +710,23 @@ static void createKeyboard() {
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 2, 1, 1, 1, 1
     };
+#endif
 
     ta_search = lv_textarea_create(lv_scr_act());
-    lv_obj_align(ta_search, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_align(ta_search, LV_ALIGN_TOP_MID, 0, 30);
     lv_textarea_set_placeholder_text(ta_search, "Search address");
     lv_obj_set_size(ta_search, SCREEN_WIDTH - 20, 40);
 
     keyboard = lv_keyboard_create(lv_scr_act());
     lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_USER_1, kb_map, kb_ctrl);
     lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_USER_1);
+#ifdef MINI_TFT
+    lv_obj_add_event_cb(keyboard, onClickT9, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_size(keyboard,SCREEN_WIDTH,SCREEN_HEIGHT - 80);
+#else
     lv_keyboard_set_textarea(keyboard, ta_search);
     lv_obj_add_event_cb(ta_search, onStartSearch, LV_EVENT_READY, keyboard);
+#endif
 
     showSearchDialog(false);
 }
@@ -767,16 +831,11 @@ void Map_init(const BootState& state) {
     createButtons();
     createStatusBar();
     createKeyboard();
-    createToast();
     createTooltip();
     createTransportList();
+    createToast();
 
     changeMapCenter(state.center, state.zoom);
-
-    // run_after(1000, {
-    //           lv_textarea_set_text(ta_search,"lidl");
-    //           searchAddress();
-    //           })
 
 #ifdef DEBUG_VALUES
     createDebugDashboard();
