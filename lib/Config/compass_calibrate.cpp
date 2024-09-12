@@ -1,3 +1,5 @@
+#ifndef MINI_TFT
+
 #include <globals.h>
 #include <Wire.h>
 #include <LSM303.h>
@@ -70,3 +72,5 @@ void calibrateCompass(LSM303& compass) {
   compass.m_min = cal_data.m_min;
   compass.m_max = cal_data.m_max;
 }
+
+#endif

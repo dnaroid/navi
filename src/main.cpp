@@ -3,23 +3,31 @@
 #include <SPI.h>
 #include <TFT_eSPI.h>
 #include <Wire.h>
-#include "LSM303.h"
 #include "lvgl.h"
 #include "MapUI.h"
 #include "Touch.h"
 #include "Display.h"
 #include "BootManager.h"
 #include "TinyGPSPlus.h"
+#include "../lv_conf.h"
+
+#ifdef MINI_TFT
+#include <DFRobot_QMC5883.h>
+
+DFRobot_QMC5883 compass(&Wire, QMC5883_ADDRESS);
+#else
+#include "LSM303.h"
 #include "compass_calibrate.h"
 
-#include "../lv_conf.h"
+static LSM303 compass;
+#endif
+
 
 // global
 float compass_angle;
 Location my_gps_location = {0, 0};
 
 static TinyGPSPlus gps;
-static LSM303 compass;
 static HardwareSerial gpsSerial(1);
 static auto spiShared = SPIClass(HSPI);
 #ifdef MINI_TFT
@@ -36,8 +44,14 @@ static bool isLowFrequency = false;
 void updateCompassAndGpsTask(void* pvParameters) {
   while (true) {
     if (compassSkips++ > COMPASS_UPD_SKIPS) {
+#ifdef MINI_TFT
+      sVector_t mag = compass.readRaw();
+      compass.getHeadingDegrees();
+      compass_angle = mag.HeadingDegress;
+#else
       compass.read();
       compass_angle = compass.heading();
+#endif
       compassSkips = 0;
     }
 
@@ -92,8 +106,28 @@ void setup() {
 
     Wire.begin(I2C_SDA, I2C_SCL);
 
-#ifndef MINI_TFT
     LOGI("Init Compass");
+#ifdef MINI_TFT
+    while (!compass.begin()) {
+      Serial.println("Could not find a valid QMC5883 sensor, check wiring!");
+      delay(1000);
+    }
+
+  /**
+  * @brief  Set declination angle on your location and fix heading
+  * @n      You can find your declination on: http://magnetic-declination.com/
+  * @n      (+) Positive or (-) for negative
+  * @n      For Bytom / Poland declination angle is 4'26E (positive)
+  * @n      Formula: (deg + (min / 60.0)) / (180 / PI);
+  */
+    compass.setDeclinationAngle((6.0 + (45.0 / 60.0)) / (180 / PI));
+
+    compass.setRange(QMC5883_RANGE_2GA);
+    compass.setMeasurementMode(QMC5883_CONTINOUS);
+    compass.setDataRate(QMC5883_DATARATE_50HZ);
+    compass.setSamples(QMC5883_SAMPLES_8);
+
+#else
     compass.init();
     compass.enableDefault();
     if (!loadCalibrationData(compass)) {
@@ -107,19 +141,19 @@ void setup() {
       calibrateCompass(compass);
       esp_restart();
     }
+#endif
     LOG(" ok");
 
     LOGI("Init GPS");
     gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
     LOG(" ok");
-#endif
+
     Touch_init();
 
     Map_init(state);
 
-#ifndef MINI_TFT
     xTaskCreatePinnedToCore(updateCompassAndGpsTask, "UpdateTask", 4096, NULL, 1, NULL, 1);
-#endif
+
     break;
 
   case ModeRoute:

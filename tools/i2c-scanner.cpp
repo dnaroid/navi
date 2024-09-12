@@ -5,9 +5,9 @@
 
 void setup()
 {
-  Wire.begin(1,2,0);
+  Wire.begin(6,7);
 
-  Serial.begin(9600);
+  Serial.begin(115200);
   while (!Serial);             // Leonardo: wait for serial monitor
   Serial.println("\nI2C Scanner");
 }
