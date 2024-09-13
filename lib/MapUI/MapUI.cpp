@@ -85,7 +85,7 @@ struct Marker {
 static int lastT9LetterIdx = 0;
 static char lastT9Key[5] = {};
 static unsigned long lastT9pressedMs = 0;
-#define T9_TIMEOUT 3000
+#define T9_TIMEOUT 1000
 
 static Location centerLoc;
 static bool prevGpsStateReady = false;
@@ -408,10 +408,12 @@ static void onClickTile(lv_event_t* e) {
     const lv_indev_t* indev = lv_indev_get_act();
     if (indev == nullptr) return;
 
+#ifndef MINI_TFT
     if (visible(ta_search)) {
         showSearchDialog(false);
         return;
     }
+#endif
 
     if (visible(lbl_tooltip)) {
         hide(lbl_tooltip);
@@ -424,7 +426,6 @@ static void onClickTile(lv_event_t* e) {
     }
 
     if (distance > 0) return;
-    // if (!tripMode && distance > 0) return; // gps debug
 
     // check click to add target marker
     if (millis() - last_drag_ms < AFTER_DRAG_TIME_THRESHOLD) return;
@@ -449,15 +450,9 @@ static void onClickTile(lv_event_t* e) {
         lv_point_t point;
         lv_indev_get_point(lv_indev_get_act(), &point);
 
-        // if (tripMode) { // gps debug
-        //     my_gps_location = pointToLocation(point, centerLoc, zoom);
-        //     return;
-        // }
-
         for (const auto& t : tiles) {
             if (t.obj == obj) {
                 marker_target.loc = pointToLocation(point, centerLoc, zoom);
-                // LOGF("%.6f, %.6f\n", marker_target.loc.lon, marker_target.loc.lat);
                 show(marker_target.obj);
 
                 if (marker_selected != nullptr) {
@@ -530,6 +525,7 @@ static void onClickTransportIco(lv_event_t* e) {
 
 static void onStartSearch(lv_event_t* e) {
     showSearchDialog(false);
+    if (strlen(lv_textarea_get_text(ta_search)) < 3) return;
     showToast("Searching address.\nPlease wait...");
     run_after(100, searchAddress())
 }
@@ -543,7 +539,7 @@ static void onClickT9(lv_event_t* e) {
         return;
     }
 
-    if (strcmp(keyTxt, LV_SYMBOL_OK) == 0 && strlen(lv_textarea_get_text(ta_search)) > 3) {
+    if (strcmp(keyTxt, LV_SYMBOL_OK) == 0) {
         onStartSearch(NULL);
         return;
     }
