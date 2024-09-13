@@ -199,7 +199,7 @@ void loop() {
   }
 #else
   lv_timer_handler();
-#ifdef MINI_TFT
+#ifndef MINI_TFT
   if (lv_display_get_inactive_time(NULL) < IDLE_TIME_MS) {
     if (isLowFrequency) setHighFrequency();
   } else {

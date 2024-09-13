@@ -43,7 +43,7 @@ static void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t 
     }
     break;
   case WStype_BIN:
-    if (camEnabled) TJpgDec.drawJpg(0, SCREEN_HEIGHT - 120, payload, length);
+    if (camEnabled) TJpgDec.drawJpg(SCREEN_CENTER_X - 160 / 2, SCREEN_HEIGHT - 120, payload, length);
     break;
   default:
     break;
