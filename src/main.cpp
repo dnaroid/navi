@@ -11,14 +11,17 @@
 #include "TinyGPSPlus.h"
 #include "../lv_conf.h"
 
+#ifdef MIRROR
+#include "Mirror.h"
+SemaphoreHandle_t xGuiSemaphore;
+#endif
+
 #ifdef MINI_TFT
 #include <DFRobot_QMC5883.h>
-
 DFRobot_QMC5883 compass(&Wire, QMC5883_ADDRESS);
 #else
 #include "LSM303.h"
 #include "compass_calibrate.h"
-
 static LSM303 compass;
 #endif
 
@@ -71,7 +74,12 @@ void updateCompassAndGpsTask(void* pvParameters) {
       }
       gpsSkips = 0;
     }
+#ifdef MIRROR
+    Mirror_loop();
+    delay(10);
+#else
     delay(100);
+#endif
   }
 }
 
@@ -102,6 +110,10 @@ void setup() {
 
   switch (mode) {
   case ModeMap:
+#ifdef MIRROR
+    xGuiSemaphore = xSemaphoreCreateMutex();
+#endif
+
     Display_init();
 
     Wire.begin(I2C_SDA, I2C_SCL);
@@ -180,10 +192,19 @@ void setLowFrequency() {
 
 
 void loop() {
+#ifdef MIRROR
+  if (xSemaphoreTake(xGuiSemaphore, portMAX_DELAY) == pdTRUE) {
+    lv_timer_handler();
+    xSemaphoreGive(xGuiSemaphore);
+  }
+#else
   lv_timer_handler();
+#ifdef MINI_TFT
   if (lv_display_get_inactive_time(NULL) < IDLE_TIME_MS) {
     if (isLowFrequency) setHighFrequency();
   } else {
     if (!isLowFrequency) setLowFrequency();
   }
+#endif
+#endif
 }

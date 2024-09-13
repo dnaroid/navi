@@ -13,6 +13,9 @@
 #include "UIhelpers.cpp"
 #include "Helpers.h"
 #include "Touch.h"
+#ifdef MIRROR
+#include "Mirror.h"
+#endif
 
 #define DEBUG_MAP 0
 #if DEBUG_MAP == 1
@@ -32,6 +35,7 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define SYMBOL_GPS       "3"
 #define SYMBOL_ROUTE     "4"
 #define SYMBOL_SEARCH    "5"
+#define SYMBOL_MIRROR    "6"
 #define SYMBOL_TRIP      "7"
 #define SYMBOL_SATELLITE "8"
 #define SYMBOL_ALL       "9"
@@ -106,6 +110,7 @@ static lv_obj_t* btn_search;
 static lv_obj_t* btn_trip;
 static lv_obj_t* ico_gps;
 static lv_obj_t* ico_transport;
+static lv_obj_t* ico_mirror;
 static lv_obj_t* line_route;
 static lv_obj_t* keyboard;
 static lv_obj_t* ta_search;
@@ -468,6 +473,19 @@ static void onClickTile(lv_event_t* e) {
     }
 }
 
+#ifdef MIRROR
+static void onClickMirror(lv_event_t* e) {
+    if (camEnabled) {
+        Mirror_stop();
+        lv_obj_set_style_text_color(ico_mirror, COLOR_INACTIVE, 0);
+        run_after(500, updateMap(true))
+    } else {
+        Mirror_start();
+        lv_obj_set_style_text_color(ico_mirror, COLOR_PRIMARY, 0);
+    }
+}
+#endif
+
 static void onClickGps(lv_event_t* e) {
     changeMapCenter(marker_me.loc, ZOOM_DEFAULT);
 }
@@ -760,6 +778,13 @@ static void createStatusBar() {
     ico_gps = createStatusIcon(SYMBOL_SATELLITE, x, y, onClickGps);
     lv_obj_set_style_text_color(ico_gps, COLOR_INACTIVE, 0);
     x += step;
+
+#ifdef MIRROR
+    ico_mirror = createStatusIcon(SYMBOL_MIRROR, x, y, onClickMirror);
+    lv_obj_set_style_text_color(ico_mirror, COLOR_INACTIVE, 0);
+    x += step;
+#endif
+
     if (distance > 0) {
         btn_trip = createStatusIcon(SYMBOL_TRIP, x, y, onClickTrip);
         lv_obj_set_style_text_color(btn_trip, COLOR_INACTIVE, 0);

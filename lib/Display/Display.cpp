@@ -3,6 +3,11 @@
 #include <lv_init.h>
 #include <drivers/display/tft_espi/lv_tft_espi.h>
 
+#ifdef MIRROR
+#include <drivers/display/tft_espi/lv_tft_espi.cpp>
+TFT_eSPI* tft_inst;
+#endif
+
 #if LV_USE_LOG != 0
 static void my_print(lv_log_level_t level, const char* buf) {
   LV_UNUSED(level);
@@ -29,8 +34,11 @@ void Display_init() {
 
   auto* buf1 = static_cast<lv_color_t*>(heap_caps_malloc(buffer_size, MALLOC_CAP_DMA));
 
-  lv_tft_espi_create(SCREEN_WIDTH, SCREEN_HEIGHT, buf1, buffer_pixel_count);
-
+  auto dsp = lv_tft_espi_create(SCREEN_WIDTH, SCREEN_HEIGHT, buf1, buffer_pixel_count);
+#ifdef MIRROR
+  auto* dsc = (lv_tft_espi_t*)lv_display_get_driver_data(dsp);
+  tft_inst = dsc->tft;
+#endif
   /*Set a tick source so that LVGL will know how much time elapsed. */
   lv_tick_set_cb(my_tick);
 #if LV_USE_LOG != 0
