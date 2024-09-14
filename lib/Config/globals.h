@@ -6,9 +6,16 @@
 #define LV_LVGL_H_INCLUDE_SIMPLE
 
 #ifdef MIRROR
+#ifdef MIRROR_UART
+// #define MIRROR_UART_BAUD 115200
+#define MIRROR_UART_BAUD 4000000
+#define MIRROR_RX 1
+#define MIRROR_TX 2
+#else
 #define WIFI_SSID "ESP32-SCOOTER"
 #define WIFI_PASSWORD "UoAcYyo5FErnjXk"
 #define IMAGE_CAPTURE_URL "http://192.168.4.1/jpg"
+#endif
 #define COMPASS_UPD_SKIPS 10
 #define GPS_UPD_SKIPS 50
 #else

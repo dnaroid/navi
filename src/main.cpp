@@ -32,9 +32,10 @@ Location my_gps_location = {0, 0};
 
 static TinyGPSPlus gps;
 static HardwareSerial gpsSerial(1);
-static auto spiShared = SPIClass(HSPI);
 #ifdef MINI_TFT
 static auto spiSD = SPIClass(VSPI);
+#else
+static auto spiShared = SPIClass(HSPI);
 #endif
 static BootState state;
 static Mode mode = ModeMap;
@@ -76,7 +77,7 @@ void updateCompassAndGpsTask(void* pvParameters) {
     }
 #ifdef MIRROR
     Mirror_loop();
-    delay(10);
+    // delay(10);
 #else
     delay(100);
 #endif
@@ -162,7 +163,10 @@ void setup() {
 
     Touch_init();
 
-    Map_init(state);
+  // Map_init(state);
+
+    Mirror_init();
+    Mirror_start();
 
     xTaskCreatePinnedToCore(updateCompassAndGpsTask, "UpdateTask", 4096, NULL, 1, NULL, 1);
 
@@ -193,10 +197,10 @@ void setLowFrequency() {
 
 void loop() {
 #ifdef MIRROR
-  if (xSemaphoreTake(xGuiSemaphore, portMAX_DELAY) == pdTRUE) {
-    lv_timer_handler();
-    xSemaphoreGive(xGuiSemaphore);
-  }
+  // if (xSemaphoreTake(xGuiSemaphore, portMAX_DELAY) == pdTRUE) {
+  //   lv_timer_handler();
+  //   xSemaphoreGive(xGuiSemaphore);
+  // }
 #else
   lv_timer_handler();
 #ifndef MINI_TFT
