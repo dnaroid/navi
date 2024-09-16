@@ -2,30 +2,148 @@
 #include "globals.h"
 #include "lvgl.h"
 #include <BootManager.h>
+#include <esp_wifi.h>
 #include <HTTPClient.h>
 #include <iostream>
 #include <sqlite3.h>
-#include <sstream>
+#include <TJpg_Decoder.h>
 #include <vector>
+#include <WebSocketsServer.h>
 #include "montserrat_14_pl.c"
 #include "marker.c"
 #include "compass.c"
 #include "UIhelpers.cpp"
 #include "Helpers.h"
 #include "Touch.h"
+
 #ifdef MIRROR
-#include "Mirror.h"
+static lv_obj_t* img_mirror;
+static bool camEnabled = false;
+static bool serverReady = false;
+static int camWsClientNumber = -1;
+static WebSocketsServer webSocket(81);
+static int mirror_width = 96;
+static int mirror_height = 96;
+
+static uint8_t mirror_img_buf[MIRROR_WIDTH * MIRROR_HEIGHT * 2];
+static lv_image_dsc_t mirror_img_dsc = {
+    {
+        .magic = LV_IMAGE_HEADER_MAGIC,
+        .cf = LV_COLOR_FORMAT_RGB565,
+        .w = MIRROR_WIDTH,
+        .h = MIRROR_HEIGHT,
+    },
+    .data_size = MIRROR_WIDTH * MIRROR_HEIGHT * 2,
+    .data = mirror_img_buf
+};
+
+bool isMirrorReady = true;
+
+static bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) {
+    size_t offset = (y * MIRROR_WIDTH + x) * 2;
+
+    for (int i = 0; i < h; i++) {
+        memcpy(mirror_img_buf + offset, bitmap + i * w, w * 2);
+        offset += MIRROR_WIDTH * 2;
+    }
+
+    if (x + w >= MIRROR_WIDTH && y + h >= MIRROR_HEIGHT) {
+        mirror_img_dsc.data = mirror_img_buf;
+        lv_img_set_src(img_mirror, &mirror_img_dsc);
+        isMirrorReady = true;
+    }
+    return true;
+}
+
+static void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
+    int commaIndex;
+    String receivedData;
+
+    switch (type) {
+    case WStype_DISCONNECTED:
+        LOGF("[%u] Disconnected\n", num);
+        camWsClientNumber = -1;
+        break;
+    case WStype_CONNECTED:
+        LOGF("[%u] Connected\n", num);
+        camWsClientNumber = num;
+        if (camEnabled) {
+            webSocket.sendTXT(num, "start");
+        } else {
+            webSocket.sendTXT(num, "stop");
+        }
+        break;
+    case WStype_BIN:
+        if (camEnabled) {
+            if (isMirrorReady) {
+                TJpgDec.drawJpg(0, 0, payload, length);
+            } else {
+                LOG("Frame skip");
+            }
+        } else {
+            webSocket.sendTXT(num, "stop");
+        }
+        break;
+    case WStype_TEXT:
+        Serial.printf("Received: %s\n", payload);
+
+        receivedData = String((char*)payload);
+        commaIndex = receivedData.indexOf(',');
+        if (commaIndex != -1) {
+            String widthStr = receivedData.substring(0, commaIndex);
+            String heightStr = receivedData.substring(commaIndex + 1);
+            int width = widthStr.toInt();
+            int height = heightStr.toInt();
+            Serial.printf("Width: %d, Height: %d\n", width, height);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+static void Mirror_init() {
+    LOGI("Init Mirror");
+
+    // esp_wifi_set_max_tx_power(1);
+    // esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+
+    WiFi.softAP(WIFI_SSID, WIFI_PASSWORD);
+    LOGI("WS server IP:", WiFi.softAPIP());
+    webSocket.begin();
+    webSocket.onEvent(webSocketEvent);
+    serverReady = true;
+    LOG(" ok");
+}
+
+static void Mirror_start() {
+    if (!serverReady) Mirror_init();
+    isMirrorReady = true;
+    camEnabled = true;
+    LOG("[Mirror.cpp] cam enabled");
+    if (camWsClientNumber != -1) webSocket.sendTXT(camWsClientNumber, "start");
+}
+
+static void Mirror_stop() {
+    camEnabled = false;
+    LOG("[Mirror.cpp] cam disabled");
+    if (camWsClientNumber != -1) webSocket.sendTXT(camWsClientNumber, "stop");
+    webSocket.disconnect();
+    webSocket.close();
+    WiFi.disconnect();
+    serverReady = false;
+}
+
+static void onMirrorTick(lv_timer_t* t) {
+    if (serverReady) webSocket.loop();
+    if (!camEnabled) lv_timer_delete(t);
+}
 #endif
 
-#define DEBUG_MAP 0
-#if DEBUG_MAP == 1
-#define DEBUG_VALUES
-static int DEBUG_VALUE_1 = 0;
-static int DEBUG_VALUE_2 = 0;
-#endif
 
 LV_IMG_DECLARE(marker)
 LV_IMG_DECLARE(compass)
+LV_IMG_DECLARE(test)
 LV_FONT_DECLARE(montserrat_14_pl)
 // npx lv_font_conv --bpp 4 --size 20 --no-compress --font /Users/buzz/WORK/icons.ttf --range 0x30-0x3d --format lvgl -o /Users/buzz/Projects/navi_c++/lib/fonts/icons.c
 
@@ -61,9 +179,6 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define COLOR_SECONDARY lv_palette_main(LV_PALETTE_ORANGE)
 #define COLOR_INACTIVE lv_palette_main(LV_PALETTE_GREY)
 
-extern int camWsClientNumber;
-extern bool camEnabled;
-
 struct Address {
     String name;
     Location location;
@@ -86,10 +201,12 @@ struct Marker {
     Location loc;
 };
 
+#ifdef MINI_TFT
 static int lastT9LetterIdx = 0;
 static char lastT9Key[5] = {};
 static unsigned long lastT9pressedMs = 0;
 #define T9_TIMEOUT 1000
+#endif
 
 static Location centerLoc;
 static bool prevGpsStateReady = false;
@@ -247,6 +364,7 @@ static void updateRoute() {
 }
 
 static void updateMap(bool force) {
+    if (camEnabled) return;
     const lv_point_t centerPx = locToPx(centerLoc, zoom);
     const int tile_x = centerPx.x / TILE_SIZE;
     const int tile_y = centerPx.y / TILE_SIZE;
@@ -327,6 +445,7 @@ static void onTimerTick(lv_timer_t* _) {
         mtZoom.ready = false;
     }
 }
+
 
 static void onDragTile(lv_event_t* e) {
     const lv_indev_t* indev = lv_indev_get_act();
@@ -474,14 +593,21 @@ static void onClickTile(lv_event_t* e) {
 }
 
 #ifdef MIRROR
-static void onClickMirror(lv_event_t* e) {
+static void onClickMirrorIco(lv_event_t* _) {
     if (camEnabled) {
+        for (const auto& t : tiles)
+            show(t.obj);
+        hide(img_mirror);
         Mirror_stop();
         lv_obj_set_style_text_color(ico_mirror, COLOR_INACTIVE, 0);
         run_after(500, updateMap(true))
     } else {
+        for (const auto& t : tiles)
+            hide(t.obj);
+        show(img_mirror);
         Mirror_start();
         lv_obj_set_style_text_color(ico_mirror, COLOR_PRIMARY, 0);
+        lv_timer_create(onMirrorTick, 1, NULL);
     }
 }
 #endif
@@ -548,6 +674,7 @@ static void onStartSearch(lv_event_t* e) {
     run_after(100, searchAddress())
 }
 
+#ifdef MINI_TFT
 static void onClickT9(lv_event_t* e) {
     const auto key_id = lv_buttonmatrix_get_selected_button(keyboard);
     const char* keyTxt = lv_buttonmatrix_get_button_text(keyboard, key_id);
@@ -581,6 +708,7 @@ static void onClickT9(lv_event_t* e) {
     strcpy(lastT9Key, keyTxt);
     lastT9pressedMs = currentTime;
 }
+#endif
 
 static void createRoute() {
     static lv_style_t style_line;
@@ -773,14 +901,17 @@ static void createStatusBar() {
         lv_obj_set_style_text_color(btn_del_route, lv_palette_main(LV_PALETTE_RED), 0);
     }
 
+#ifndef MIRROR
     ico_transport = createStatusIcon(getSymbolByTransport(transport), x, y, onClickTransportIco);
     x += step;
+#endif
+
     ico_gps = createStatusIcon(SYMBOL_SATELLITE, x, y, onClickGps);
     lv_obj_set_style_text_color(ico_gps, COLOR_INACTIVE, 0);
     x += step;
 
 #ifdef MIRROR
-    ico_mirror = createStatusIcon(SYMBOL_MIRROR, x, y, onClickMirror);
+    ico_mirror = createStatusIcon(SYMBOL_MIRROR, x, y, onClickMirrorIco);
     lv_obj_set_style_text_color(ico_mirror, COLOR_INACTIVE, 0);
     x += step;
 #endif
@@ -791,7 +922,7 @@ static void createStatusBar() {
     }
 }
 
-void createTransportList() {
+static void createTransportList() {
     lst_transport = lv_list_create(lv_screen_active());
     lv_obj_align(lst_transport, LV_ALIGN_TOP_RIGHT, -5, 20);
     lv_obj_set_height(lst_transport, LV_SIZE_CONTENT);
@@ -806,6 +937,15 @@ void createTransportList() {
     lv_obj_add_event_cb(btn, onClickTransportList, LV_EVENT_CLICKED, NULL);
     hide(lst_transport);
 }
+
+#ifdef MIRROR
+static void createMirror() {
+    img_mirror = lv_image_create(lv_scr_act());
+    lv_obj_set_size(img_mirror, MIRROR_WIDTH, MIRROR_HEIGHT);
+    lv_obj_center(img_mirror);
+    hide(img_mirror);
+}
+#endif
 
 #ifdef DEBUG_VALUES
 static void createDebugDashboard() {
@@ -839,6 +979,10 @@ void Map_init(const BootState& state) {
     sqlite3_initialize();
     sqlite3_open("/sd/addr.db", &addrDb);
 
+    TJpgDec.setJpgScale(1);
+    // TJpgDec.setSwapBytes(true);
+    TJpgDec.setCallback(tft_output);
+
     route_px = new lv_point_precise_t[state.route.size()];
     centerLoc = state.center;
     zoom = state.zoom;
@@ -847,6 +991,9 @@ void Map_init(const BootState& state) {
     transport = state.transport;
 
     createMap();
+#ifdef MIRROR
+    createMirror();
+#endif
     createRoute();
     createMarkers(state.start, state.end);
     createButtons();
@@ -857,10 +1004,6 @@ void Map_init(const BootState& state) {
     createToast();
 
     changeMapCenter(state.center, state.zoom);
-
-#ifdef DEBUG_VALUES
-    createDebugDashboard();
-#endif
 
     lv_timer_create(onTimerTick, TIMER_PERIOD, NULL);
 

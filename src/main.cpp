@@ -11,11 +11,6 @@
 #include "TinyGPSPlus.h"
 #include "../lv_conf.h"
 
-#ifdef MIRROR
-#include "Mirror.h"
-SemaphoreHandle_t xGuiSemaphore;
-#endif
-
 #ifdef MINI_TFT
 #include <DFRobot_QMC5883.h>
 DFRobot_QMC5883 compass(&Wire, QMC5883_ADDRESS);
@@ -32,9 +27,10 @@ Location my_gps_location = {0, 0};
 
 static TinyGPSPlus gps;
 static HardwareSerial gpsSerial(1);
-static auto spiShared = SPIClass(HSPI);
 #ifdef MINI_TFT
 static auto spiSD = SPIClass(VSPI);
+#else
+static auto spiShared = SPIClass(HSPI);
 #endif
 static BootState state;
 static Mode mode = ModeMap;
@@ -74,11 +70,11 @@ void updateCompassAndGpsTask(void* pvParameters) {
       }
       gpsSkips = 0;
     }
-#ifdef MIRROR
-    Mirror_loop();
-    delay(10);
-#else
     delay(100);
+#ifdef MIRROR
+    // Mirror_loop();
+    // delay(5);
+#else
 #endif
   }
 }
@@ -110,9 +106,6 @@ void setup() {
 
   switch (mode) {
   case ModeMap:
-#ifdef MIRROR
-    xGuiSemaphore = xSemaphoreCreateMutex();
-#endif
 
     Display_init();
 
@@ -180,6 +173,7 @@ void setup() {
   LOG("---------------- Init done ----------------");
 }
 
+#ifndef MINI_TFT
 void setHighFrequency() {
   setCpuFrequencyMhz(240);
   isLowFrequency = false;
@@ -189,15 +183,9 @@ void setLowFrequency() {
   setCpuFrequencyMhz(80);
   isLowFrequency = true;
 }
-
+#endif
 
 void loop() {
-#ifdef MIRROR
-  if (xSemaphoreTake(xGuiSemaphore, portMAX_DELAY) == pdTRUE) {
-    lv_timer_handler();
-    xSemaphoreGive(xGuiSemaphore);
-  }
-#else
   lv_timer_handler();
 #ifndef MINI_TFT
   if (lv_display_get_inactive_time(NULL) < IDLE_TIME_MS) {
@@ -205,6 +193,5 @@ void loop() {
   } else {
     if (!isLowFrequency) setLowFrequency();
   }
-#endif
 #endif
 }

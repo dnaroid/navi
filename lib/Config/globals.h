@@ -9,8 +9,12 @@
 #define WIFI_SSID "ESP32-SCOOTER"
 #define WIFI_PASSWORD "UoAcYyo5FErnjXk"
 #define IMAGE_CAPTURE_URL "http://192.168.4.1/jpg"
-#define COMPASS_UPD_SKIPS 10
-#define GPS_UPD_SKIPS 50
+#define COMPASS_UPD_SKIPS   1
+#define GPS_UPD_SKIPS       5
+#define MIRROR_WIDTH  160
+#define MIRROR_HEIGHT 120
+// #define MIRROR_WIDTH  240
+// #define MIRROR_HEIGHT 176
 #else
 #define COMPASS_UPD_SKIPS 1
 #define GPS_UPD_SKIPS 5
@@ -56,7 +60,7 @@ extern Location my_gps_location;
 
 /// --- screen
 #ifdef MINI_TFT
-#define SCREEN_WIDTH 240
+#define SCREEN_WIDTH  240
 #define SCREEN_HEIGHT 280
 #define BUTTON_W 50
 #define BUTTON_H 35

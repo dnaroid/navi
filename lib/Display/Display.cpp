@@ -26,7 +26,7 @@ void Display_init() {
   lv_init();
 
 #ifdef MINI_TFT
-  size_t buffer_pixel_count = (SCREEN_WIDTH * SCREEN_HEIGHT);
+  size_t buffer_pixel_count = (SCREEN_WIDTH * SCREEN_HEIGHT / 2);
 #else
   size_t buffer_pixel_count = (SCREEN_WIDTH * SCREEN_HEIGHT) / 3;
 #endif
