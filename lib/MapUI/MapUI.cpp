@@ -773,8 +773,10 @@ static void createStatusBar() {
         lv_obj_set_style_text_color(btn_del_route, lv_palette_main(LV_PALETTE_RED), 0);
     }
 
+#ifndef MIRROR
     ico_transport = createStatusIcon(getSymbolByTransport(transport), x, y, onClickTransportIco);
     x += step;
+#endif
     ico_gps = createStatusIcon(SYMBOL_SATELLITE, x, y, onClickGps);
     lv_obj_set_style_text_color(ico_gps, COLOR_INACTIVE, 0);
     x += step;

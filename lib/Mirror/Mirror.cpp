@@ -12,6 +12,8 @@ extern SemaphoreHandle_t xGuiSemaphore;
 // global
 bool camEnabled = false;
 int camWsClientNumber = -1;
+static int mirror_width = 96;
+static int mirror_height = 96;
 
 static WebSocketsServer webSocket(81);
 static bool serverReady = false;
@@ -28,6 +30,8 @@ static bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* b
 }
 
 static void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
+  int commaIndex;
+  String receivedData;
   switch (type) {
   case WStype_DISCONNECTED:
     LOGF("[%u] Disconnected\n", num);
@@ -43,7 +47,17 @@ static void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t 
     }
     break;
   case WStype_BIN:
-    if (camEnabled) TJpgDec.drawJpg(SCREEN_CENTER_X - 160 / 2, SCREEN_HEIGHT - 120, payload, length);
+    if (camEnabled) TJpgDec.drawJpg(SCREEN_CENTER_X - mirror_width / 2, SCREEN_CENTER_Y - mirror_height / 2, payload, length);
+    break;
+  case WStype_TEXT:
+    receivedData = String((char*)payload);
+    commaIndex = receivedData.indexOf(',');
+    if (commaIndex != -1) {
+      String widthStr = receivedData.substring(0, commaIndex);
+      String heightStr = receivedData.substring(commaIndex + 1);
+      mirror_width = widthStr.toInt();
+      mirror_height = heightStr.toInt();
+    }
     break;
   default:
     break;
@@ -72,11 +86,14 @@ void Mirror_start() {
   if (camWsClientNumber != -1) webSocket.sendTXT(camWsClientNumber, "start");
 }
 
-
 void Mirror_stop() {
   camEnabled = false;
   LOG("[Mirror.cpp] cam disabled");
   if (camWsClientNumber != -1) webSocket.sendTXT(camWsClientNumber, "stop");
+  webSocket.disconnect();
+  webSocket.close();
+  WiFi.disconnect();
+  serverReady = false;
 }
 
 void Mirror_loop() {

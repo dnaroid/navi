@@ -197,6 +197,8 @@ void loop() {
     lv_timer_handler();
     xSemaphoreGive(xGuiSemaphore);
   }
+  delay(10);
+  lv_tick_inc(10);
 #else
   lv_timer_handler();
 #ifndef MINI_TFT

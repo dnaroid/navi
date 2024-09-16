@@ -1,7 +1,8 @@
 #include "Display.h"
 #include <globals.h>
 #include <lv_init.h>
-#include <drivers/display/tft_espi/lv_tft_espi.h>
+#include <core/lv_obj.h>
+#include <core/lv_obj_style_gen.h>
 
 #ifdef MIRROR
 #include <drivers/display/tft_espi/lv_tft_espi.cpp>
@@ -26,7 +27,7 @@ void Display_init() {
   lv_init();
 
 #ifdef MINI_TFT
-  size_t buffer_pixel_count = (SCREEN_WIDTH * SCREEN_HEIGHT);
+  size_t buffer_pixel_count = (SCREEN_WIDTH * SCREEN_HEIGHT / 2);
 #else
   size_t buffer_pixel_count = (SCREEN_WIDTH * SCREEN_HEIGHT) / 3;
 #endif
