@@ -58,6 +58,8 @@ extern Location my_gps_location;
 #define GPS_RX 47
 #define GPS_TX 48
 
+#define MIRROR_POWER_PIN 1
+
 /// --- screen
 #ifdef MINI_TFT
 #define SCREEN_WIDTH 240

@@ -352,6 +352,8 @@ void Mirror_server_init() {
 
 void Mirror_init(const BootState& state) {
   LOGI("Init Mirror");
+  pinMode(MIRROR_POWER_PIN,OUTPUT);
+
   processRoute(state.route);
   distance = state.distance;
   my_location = state.start;
@@ -368,7 +370,8 @@ void Mirror_init(const BootState& state) {
 }
 
 void Mirror_start() {
-  if (!serverReady) { Mirror_server_init(); }
+  if (!serverReady) Mirror_server_init();
+  digitalWrite(MIRROR_POWER_PIN,HIGH);
   camEnabled = true;
   LOG("[Mirror.cpp] cam enabled");
   if (camWsClientNumber != -1) webSocket.sendTXT(camWsClientNumber, "start");
