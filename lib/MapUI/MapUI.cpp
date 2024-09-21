@@ -4,18 +4,17 @@
 #include <BootManager.h>
 #include <HTTPClient.h>
 #include <iostream>
+#include <Mirror.h>
 #include <sqlite3.h>
 #include <sstream>
 #include <vector>
 #include "montserrat_14_pl.c"
 #include "marker.c"
 #include "compass.c"
-#include "UIhelpers.cpp"
+#include "UIHelpers.h"
 #include "Helpers.h"
 #include "Touch.h"
-#ifdef MIRROR
-#include "Mirror.h"
-#endif
+
 
 #define DEBUG_MAP 0
 #if DEBUG_MAP == 1
@@ -35,7 +34,6 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define SYMBOL_GPS       "3"
 #define SYMBOL_ROUTE     "4"
 #define SYMBOL_SEARCH    "5"
-#define SYMBOL_MIRROR    "6"
 #define SYMBOL_TRIP      "7"
 #define SYMBOL_SATELLITE "8"
 #define SYMBOL_ALL       "9"
@@ -61,8 +59,6 @@ LV_FONT_DECLARE(montserrat_14_pl)
 #define COLOR_SECONDARY lv_palette_main(LV_PALETTE_ORANGE)
 #define COLOR_INACTIVE lv_palette_main(LV_PALETTE_GREY)
 
-extern int camWsClientNumber;
-extern bool camEnabled;
 
 struct Address {
     String name;
@@ -86,10 +82,12 @@ struct Marker {
     Location loc;
 };
 
+#ifdef MINI_TFT
 static int lastT9LetterIdx = 0;
 static char lastT9Key[5] = {};
 static unsigned long lastT9pressedMs = 0;
 #define T9_TIMEOUT 1000
+#endif
 
 static Location centerLoc;
 static bool prevGpsStateReady = false;
@@ -110,7 +108,6 @@ static lv_obj_t* btn_search;
 static lv_obj_t* btn_trip;
 static lv_obj_t* ico_gps;
 static lv_obj_t* ico_transport;
-static lv_obj_t* ico_mirror;
 static lv_obj_t* line_route;
 static lv_obj_t* keyboard;
 static lv_obj_t* ta_search;
@@ -131,14 +128,14 @@ static Transport transport;
 
 static lv_timer_t* hold_timer = nullptr;
 static bool is_hold_valid = false;
-static bool tripMode = false;
+static bool isLockGps = false;
 static unsigned long last_drag_ms = 0;
 
 // proto
 static void updateMarkers(bool onlyMe = false);
 static void updateMap(bool force = false);
 static void updateRoute();
-static void updateButtons();
+static void drawButtons();
 static void onClickMarker(lv_event_t* e);
 static void changeMapCenter(Location newLoc, int newZoom);
 
@@ -214,7 +211,7 @@ static void changeMapCenter(Location newLoc, int newZoom) {
     updateMap();
     updateMarkers();
     updateRoute();
-    updateButtons();
+    drawButtons();
 }
 
 static void updateMarkers(bool onlyMe) {
@@ -237,10 +234,11 @@ static void updateMarkers(bool onlyMe) {
 
 static void updateRoute() {
     if (route.empty()) return;
-    if (tripMode) updateRouteProgress(my_gps_location, route);
+    if (isLockGps) updateRouteProgress(my_gps_location, route);
 
     int idx = 0;
     for (auto& loc : route) {
+        // todo refactor cache centerLoc to centerLocPx as in mirror
         route_px[idx++] = locToCenterOffsetPPx(loc, centerLoc, zoom);
     }
     lv_line_set_points(line_route, route_px, idx);
@@ -269,7 +267,7 @@ static void updateMap(bool force) {
     }
 }
 
-static void updateButtons() {
+static void drawButtons() {
     if (zoom <= ZOOM_MIN) {
         disable(btn_zoom_out);
     } else {
@@ -290,11 +288,12 @@ static void updateButtons() {
 }
 
 static void onGpsFound() {
-    lv_obj_set_style_text_color(ico_gps, COLOR_PRIMARY, 0);
+    show(ico_gps);
 }
 
 static void onGpsLost() {
-    lv_obj_set_style_text_color(ico_gps,COLOR_INACTIVE, 0);
+    isLockGps = false;
+    hide(ico_gps);
 }
 
 static void onTimerTick(lv_timer_t* _) {
@@ -302,7 +301,7 @@ static void onTimerTick(lv_timer_t* _) {
 
     if (my_gps_location.lon != 0) {
         marker_me.loc = my_gps_location;
-        if (tripMode && getDistanceMeters(my_gps_location, centerLoc) > 2) {
+        if (isLockGps && getDistanceMeters(my_gps_location, centerLoc) > 2) {
             changeMapCenter(my_gps_location, zoom);
         } else {
             needUpdGpsMarker = true;
@@ -365,16 +364,16 @@ static void onClickMarker(lv_event_t* e) {
             // first click
             marker_selected = &m;
 
-            const char* name = foundAddresses[idx].name.c_str();
-            size_t name_length = strlen(name);
-            char buffer[name_length + 20];
+            const char* text = foundAddresses[idx].name.c_str();
+            size_t text_length = strlen(text);
+            char buffer[text_length + 20];
 
             float distance = foundAddresses[idx].distance;
             if (distance < 1.0) {
                 const int meters = static_cast<int>(distance * 1000);
-                snprintf(buffer, sizeof(buffer), "%s\n%d m", name, meters);
+                snprintf(buffer, sizeof(buffer), "%s\n%d m", text, meters);
             } else {
-                snprintf(buffer, sizeof(buffer), "%s\n%.1f km", name, distance);
+                snprintf(buffer, sizeof(buffer), "%s\n%.1f km", text, distance);
             }
             lv_label_set_text(lbl_tooltip, buffer);
 
@@ -466,28 +465,20 @@ static void onClickTile(lv_event_t* e) {
                 }
 
                 updateMarkers();
-                updateButtons();
+                drawButtons();
                 break;
             }
         }
     }
 }
 
-#ifdef MIRROR
-static void onClickMirror(lv_event_t* e) {
-    if (camEnabled) {
-        Mirror_stop();
-        lv_obj_set_style_text_color(ico_mirror, COLOR_INACTIVE, 0);
-        run_after(500, updateMap(true))
+static void onClickGps(lv_event_t* _) {
+    if (isLockGps) {
+        lv_obj_set_style_text_color(ico_gps, COLOR_INACTIVE, 0);
     } else {
-        Mirror_start();
-        lv_obj_set_style_text_color(ico_mirror, COLOR_PRIMARY, 0);
+        lv_obj_set_style_text_color(ico_gps, COLOR_PRIMARY, 0);
     }
-}
-#endif
-
-static void onClickGps(lv_event_t* e) {
-    changeMapCenter(marker_me.loc, ZOOM_DEFAULT);
+    isLockGps = !isLockGps;
 }
 
 static void onClickRoute(lv_event_t* e) {
@@ -504,14 +495,14 @@ static void onClickDelRoute(lv_event_t* e) {
     writeBootState({CURRENT_BM_VER, ModeMap, TransportAll, centerLoc, zoom, marker_me.loc, marker_target.loc});
     route.clear();
     distance = -1;
-    updateButtons();
+    drawButtons();
     lv_obj_del(line_route);
     lv_obj_del(lbl_distance);
     hide(btn_del_route);
     show(btn_route);
 }
 
-static void onClickSearch(lv_event_t* e) {
+static void onClickSearch(lv_event_t* _) {
     for (int idx = 0; idx < ADDR_SEARCH_LIMIT; idx++) {
         hide(markers[idx].obj);
     }
@@ -519,10 +510,12 @@ static void onClickSearch(lv_event_t* e) {
     showSearchDialog(true);
 }
 
-static void onClickTrip(lv_event_t* e) {
-    tripMode = !tripMode;
-    if (tripMode) changeMapCenter(marker_me.loc, ZOOM_TRIP);
-    lv_obj_set_style_text_color(btn_trip, tripMode ? COLOR_PRIMARY : COLOR_INACTIVE, 0);
+static void onClickTrip(lv_event_t* _) {
+    Mirror_start();
+    run_after(100, {
+              switchBootMode(ModeDrive);
+              esp_restart();
+              })
 }
 
 static void onClickTransportList(lv_event_t* e) {
@@ -638,8 +631,12 @@ static void createButtons() {
     btn_search = createBtn(SYMBOL_SEARCH, x, y, onClickSearch);
     x += step;
     btn_route = createBtn(SYMBOL_ROUTE, x, y, onClickRoute);
-    if (distance > 0)
+    btn_trip = createBtn(SYMBOL_TRIP, x, y, onClickTrip);
+    if (distance > 0) {
         hide(btn_route);
+    } else {
+        hide(btn_trip);
+    }
 }
 
 static void createMarkers(Location start, Location target) {
@@ -773,24 +770,11 @@ static void createStatusBar() {
         lv_obj_set_style_text_color(btn_del_route, lv_palette_main(LV_PALETTE_RED), 0);
     }
 
-#ifndef MIRROR
     ico_transport = createStatusIcon(getSymbolByTransport(transport), x, y, onClickTransportIco);
     x += step;
-#endif
+
     ico_gps = createStatusIcon(SYMBOL_SATELLITE, x, y, onClickGps);
-    lv_obj_set_style_text_color(ico_gps, COLOR_INACTIVE, 0);
-    x += step;
-
-#ifdef MIRROR
-    ico_mirror = createStatusIcon(SYMBOL_MIRROR, x, y, onClickMirror);
-    lv_obj_set_style_text_color(ico_mirror, COLOR_INACTIVE, 0);
-    x += step;
-#endif
-
-    if (distance > 0) {
-        btn_trip = createStatusIcon(SYMBOL_TRIP, x, y, onClickTrip);
-        lv_obj_set_style_text_color(btn_trip, COLOR_INACTIVE, 0);
-    }
+    hide(ico_gps);
 }
 
 void createTransportList() {

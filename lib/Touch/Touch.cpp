@@ -27,7 +27,7 @@ float get_distance(const lv_point_t p1, const lv_point_t p2) {
 
 #endif
 
-static void my_touchpad_read(lv_indev_t* indev, lv_indev_data_t* data) {
+static void my_touchpad_read(lv_indev_t* _, lv_indev_data_t* data) {
 #ifdef MINI_TFT
   if (touch.available()) {
     last_points[0].x = touch.data.x;

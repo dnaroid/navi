@@ -1,6 +1,7 @@
 #ifndef TOUCH_H
 #define TOUCH_H
 
+#include <CST816S.h>
 #include <misc/lv_area.h>
 
 struct MultiTouchData {
@@ -11,6 +12,5 @@ struct MultiTouchData {
 
 extern MultiTouchData mtZoom;
 void Touch_init();
-
 
 #endif //TOUCH_H

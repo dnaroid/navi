@@ -5,16 +5,11 @@
 
 #define LV_LVGL_H_INCLUDE_SIMPLE
 
-#ifdef MIRROR
 #define WIFI_SSID "ESP32-SCOOTER"
 #define WIFI_PASSWORD "UoAcYyo5FErnjXk"
 #define IMAGE_CAPTURE_URL "http://192.168.4.1/jpg"
 #define COMPASS_UPD_SKIPS 10
-#define GPS_UPD_SKIPS 50
-#else
-#define COMPASS_UPD_SKIPS 1
-#define GPS_UPD_SKIPS 5
-#endif
+#define GPS_UPD_SKIPS 25
 
 #define INIT_LAT 54.3520
 #define INIT_LON 18.6466

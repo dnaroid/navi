@@ -6,11 +6,12 @@
 #include <globals.h>
 #include <vector>
 
-#define CURRENT_BM_VER 2
+#define CURRENT_BM_VER 0
 
 enum Mode {
   ModeMap = 'm',
   ModeRoute = 'r',
+  ModeDrive = 'd',
 };
 
 enum Transport {
@@ -33,6 +34,7 @@ struct BootState {
 };
 
 void writeBootState(const BootState& state);
+void switchBootMode(Mode mode);
 BootState readBootState();
 
 #endif //BOOTMANAGER_H

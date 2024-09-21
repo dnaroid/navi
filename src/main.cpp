@@ -9,12 +9,8 @@
 #include "Display.h"
 #include "BootManager.h"
 #include "TinyGPSPlus.h"
-#include "../lv_conf.h"
-
-#ifdef MIRROR
 #include "Mirror.h"
-SemaphoreHandle_t xGuiSemaphore;
-#endif
+#include "../lv_conf.h"
 
 #ifdef MINI_TFT
 #include <DFRobot_QMC5883.h>
@@ -27,64 +23,66 @@ static LSM303 compass;
 
 
 // global
+SemaphoreHandle_t xWireSemaphore;
 float compass_angle;
 Location my_gps_location = {0, 0};
 
 static TinyGPSPlus gps;
 static HardwareSerial gpsSerial(1);
-static auto spiShared = SPIClass(HSPI);
 #ifdef MINI_TFT
 static auto spiSD = SPIClass(VSPI);
+#else
+static auto spiShared = SPIClass(HSPI);
 #endif
 static BootState state;
 static Mode mode = ModeMap;
 static PathFinder pf;
-
 static int gpsSkips = 0;
 static int compassSkips = 0;
-static bool isLowFrequency = false;
 
-void updateCompassAndGpsTask(void* pvParameters) {
+auto tft = TFT_eSPI();
+
+void updateCompassAndGpsTask(void* _) {
   while (true) {
-    if (compassSkips++ > COMPASS_UPD_SKIPS) {
+    if (compassSkips++ > COMPASS_UPD_SKIPS * 5) {
+      if (xSemaphoreTake(xWireSemaphore, portMAX_DELAY) == pdTRUE) {
 #ifdef MINI_TFT
-      sVector_t mag = compass.readRaw();
-      compass.getHeadingDegrees();
-      compass_angle = mag.HeadingDegress;
+        sVector_t mag = compass.readRaw();
+        compass.getHeadingDegrees();
+        compass_angle = mag.HeadingDegress;
 #else
       compass.read();
       compass_angle = compass.heading();
+      Mirror_updateUI();
 #endif
-      compassSkips = 0;
+        xSemaphoreGive(xWireSemaphore);
+        compassSkips = 0;
+      }
     }
-
-    if (gpsSkips++ > GPS_UPD_SKIPS) {
-      while (gpsSerial.available() > 0) {
-        gps.encode(gpsSerial.read());
-      }
-      if (gps.location.isUpdated()) {
-        float gpsLat = gps.location.lat();
-        float gpsLon = gps.location.lng();
-        my_gps_location.lat = gpsLat;
-        my_gps_location.lon = gpsLon;
-      }
-      if (!gps.location.isValid()) {
-        my_gps_location.lat = 0;
-        my_gps_location.lon = 0;
-      }
-      gpsSkips = 0;
-    }
-#ifdef MIRROR
-    Mirror_loop();
+    // if (gpsSkips++ > GPS_UPD_SKIPS) {
+    //   while (gpsSerial.available() > 0) {
+    //     gps.encode(gpsSerial.read());
+    //   }
+    //   if (gps.location.isUpdated()) {
+    //     float gpsLat = gps.location.lat();
+    //     float gpsLon = gps.location.lng();
+    //     my_gps_location.lat = gpsLat;
+    //     my_gps_location.lon = gpsLon;
+    //   }
+    //   if (!gps.location.isValid()) {
+    //     my_gps_location.lat = 0;
+    //     my_gps_location.lon = 0;
+    //   }
+    //   gpsSkips = 0;
+    // }
     delay(10);
-#else
-    delay(100);
-#endif
   }
 }
 
 void setup() {
   START_SERIAL
+
+  xWireSemaphore = xSemaphoreCreateMutex();
 
   LOGI("Init Card reader");
 #ifdef MINI_TFT
@@ -110,12 +108,7 @@ void setup() {
 
   switch (mode) {
   case ModeMap:
-#ifdef MIRROR
-    xGuiSemaphore = xSemaphoreCreateMutex();
-#endif
-
-    Display_init();
-
+  case ModeDrive:
     Wire.begin(I2C_SDA, I2C_SCL);
 
     LOGI("Init Compass");
@@ -159,13 +152,25 @@ void setup() {
     LOGI("Init GPS");
     gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
     LOG(" ok");
+  }
 
+  switch (mode) {
+  case ModeMap:
+    Display_init();
     Touch_init();
-
     Map_init(state);
+    xTaskCreatePinnedToCore(updateCompassAndGpsTask, "CompassAndGpsTask", 4096, NULL, 1, NULL, 1);
+    break;
 
-    xTaskCreatePinnedToCore(updateCompassAndGpsTask, "UpdateTask", 4096, NULL, 1, NULL, 1);
-
+  case ModeDrive:
+    tft.init();
+    tft.initDMA();
+    tft.invertDisplay(true);
+    tft.setRotation(0);
+    tft.fillScreen(TFT_BLACK);
+    Mirror_init(state);
+    Mirror_start();
+    xTaskCreatePinnedToCore(updateCompassAndGpsTask, "CompassAndGpsTask", 4096, NULL, 1, NULL, 1);
     break;
 
   case ModeRoute:
@@ -175,38 +180,26 @@ void setup() {
     pf.calculateMapCenterAndZoom();
     writeBootState({CURRENT_BM_VER, ModeMap, state.transport, pf.pathCenter, pf.zoom, state.start, state.end, pf.distance, pf.path,});
     esp_restart();
+    break;
   }
 
   LOG("---------------- Init done ----------------");
 }
 
-void setHighFrequency() {
-  setCpuFrequencyMhz(240);
-  isLowFrequency = false;
-}
-
-void setLowFrequency() {
-  setCpuFrequencyMhz(80);
-  isLowFrequency = true;
-}
-
-
 void loop() {
-#ifdef MIRROR
-  if (xSemaphoreTake(xGuiSemaphore, portMAX_DELAY) == pdTRUE) {
+  switch (mode) {
+  case ModeMap:
     lv_timer_handler();
-    xSemaphoreGive(xGuiSemaphore);
+    delay(10);
+    lv_tick_inc(10);
+    break;
+
+  case ModeDrive:
+    Mirror_loop();
+    delay(10);
+    break;
+
+  default:
+    break;
   }
-  delay(10);
-  lv_tick_inc(10);
-#else
-  lv_timer_handler();
-#ifndef MINI_TFT
-  if (lv_display_get_inactive_time(NULL) < IDLE_TIME_MS) {
-    if (isLowFrequency) setHighFrequency();
-  } else {
-    if (!isLowFrequency) setLowFrequency();
-  }
-#endif
-#endif
 }

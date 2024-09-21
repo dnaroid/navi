@@ -7,6 +7,7 @@ const char* modeToString(const Mode mode) {
   switch (mode) {
   case ModeMap: return "Map";
   case ModeRoute: return "Route";
+  case ModeDrive: return "Drive";
   default: return "Unknown";
   }
 }
@@ -23,6 +24,19 @@ void printBootState(const BootState& state) {
   for (const auto& loc : state.route) {
     std::cout << "    (" << loc.lon << ", " << loc.lat << ")" << std::endl;
   }
+}
+
+void switchBootMode(const Mode mode) {
+  FILE* file = fopen(MODE_FILE, "r+");
+  if (!file) {
+    LOG("Failed to open", MODE_FILE, "for writing");
+    return;
+  }
+  const char data[3] = {CURRENT_BM_VER, ',', static_cast<char>(mode)};
+  fseek(file, 0, SEEK_SET);
+  fwrite(data, sizeof(char), 3, file);
+  fclose(file);
+  LOG("Boot state switched to", modeToString(mode));
 }
 
 void writeBootState(const BootState& state) {

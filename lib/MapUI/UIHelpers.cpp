@@ -233,18 +233,119 @@ float pointToLineDistance(Location p, Location p1, Location p2, Location& inters
   return sqrt(dx * dx + dy * dy) * 111320;
 }
 
-void updateRouteProgress(Location my_location, std::vector<Location>& route) {
-  for (size_t i = 0; i < route.size() - 1; ++i) {
+lv_point_t rotatePoint(lv_point_t point, lv_point_t center, float angle) {
+  float rad = angle * M_PI / 180.0;
+  float cosAngle = cos(rad);
+  float sinAngle = sin(rad);
+
+  lv_point_t rotated;
+  rotated.x = cosAngle * (point.x - center.x) - sinAngle * (point.y - center.y) + center.x;
+  rotated.y = sinAngle * (point.x - center.x) + cosAngle * (point.y - center.y) + center.y;
+  return rotated;
+}
+
+lv_point_t locToCenterPxOffsetPx(Location loc, lv_point_t center_px, int zoom) {
+  lv_point_t loc_px = locToPx(loc, zoom); // Convert location to pixel coordinates
+  int screenX = loc_px.x - center_px.x; // Calculate the x offset
+  int screenY = loc_px.y - center_px.y; // Calculate the y offset
+  return {screenX, screenY}; // Return the offset in pixel coordinates
+}
+
+struct ClosestEdge {
+  int edgeIndex;
+  Location intersection;
+  float distance;
+};
+
+ClosestEdge findClosestEdge(Location& my_location, const std::vector<Location>& route) {
+  ClosestEdge closestEdge;
+  closestEdge.distance = std::numeric_limits<float>::max();
+
+  for (int i = 0; i < route.size() - 1; ++i) {
     Location p1 = route[i];
     Location p2 = route[i + 1];
     Location intersection;
 
     float distance = pointToLineDistance(my_location, p1, p2, intersection);
 
-    if (distance <= TRIP_MODE_TOLERANCE_M) {
-      route[i + 1] = intersection;
-      route.erase(route.begin(), route.begin() + i + 1);
-      break;
+    if (distance < closestEdge.distance) {
+      closestEdge.edgeIndex = i;
+      closestEdge.intersection = intersection;
+      closestEdge.distance = distance;
     }
   }
+
+  return closestEdge;
+}
+
+void updateRouteProgress(Location& my_location, std::vector<Location>& route) {
+  ClosestEdge closestEdge = findClosestEdge(my_location, route);
+  // LOG("Distance to edge:", closestEdge.distance);
+  if (closestEdge.distance > TRIP_MODE_TOLERANCE_M) return;
+  if (closestEdge.edgeIndex < route.size()) {
+    route.erase(route.begin(), route.begin() + closestEdge.edgeIndex);
+  }
+  if (!route.empty()) {
+    route[0] = closestEdge.intersection;
+  }
+}
+
+float simpleDistance(Location& loc1, Location& loc2) {
+  float dLat = loc2.lat - loc1.lat;
+  float dLon = (loc2.lon - loc1.lon) * cos(loc1.lat * M_PI / 180.0);
+  return sqrt(dLat * dLat + dLon * dLon) * 111.32;
+}
+
+float getRouteDistance(std::vector<Location>& route) {
+  float totalDistance = 0.0;
+
+  for (size_t i = 0; i < route.size() - 1; ++i) {
+    totalDistance += simpleDistance(route[i], route[i + 1]);
+  }
+
+  return totalDistance;
+}
+
+int calculateAngle(Location p1, Location p2, Location p3) {
+  float dLon1 = p2.lon - p1.lon;
+  float dLat1 = p2.lat - p1.lat;
+  float dLon2 = p3.lon - p2.lon;
+  float dLat2 = p3.lat - p2.lat;
+
+  float angle = atan2(dLat2, dLon2) - atan2(dLat1, dLon1);
+  angle = static_cast<int>(angle * 180.0 / M_PI);
+  if (angle < 0) angle += 360;
+  return angle;
+}
+
+#define TURN_ANGLE_THRESHOLD    30.0
+#define TURN_DISTANCE_THRESHOLD 0.003
+#define TURN_MAX_DISTANCE       500
+
+struct NextTurn {
+  int angle;
+  int distance;
+};
+
+NextTurn getDistanceToNextTurn(const std::vector<Location>& route) {
+  float totalDistance = 0.0;
+
+  for (size_t i = 0; i < route.size() - 2; ++i) {
+    Location p1 = route[i];
+    Location p2 = route[i + 1];
+    Location p3 = route[i + 2];
+
+    float segmentDistance = simpleDistance(p1, p2);
+    totalDistance += segmentDistance;
+    if (segmentDistance < TURN_DISTANCE_THRESHOLD) continue;
+
+    if (totalDistance > TURN_MAX_DISTANCE) return {true, -1};
+
+    int angle = calculateAngle(p1, p2, p3);
+    if (angle >= TURN_ANGLE_THRESHOLD) {
+      return {angle, static_cast<int>(totalDistance * 1000)};
+    }
+  }
+
+  return {true, -1};
 }
