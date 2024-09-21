@@ -1,3 +1,4 @@
+#include <Mirror.h>
 #include "globals.h"
 #include "lvgl.h"
 #include "BootManager.h"
@@ -49,6 +50,7 @@ Location pointToLocation(lv_point_t point, Location cursorLoc, int zoom);
 float getDistanceMeters(Location loc1, Location loc2);
 
 void updateRouteProgress(Location& my_location, std::vector<Location>& route);
+void updateRouteExtProgress(Location& my_location, std::vector<RouteExt>& route);
 
 lv_point_t rotatePoint(lv_point_t point, lv_point_t center, float angle);
 
@@ -56,11 +58,4 @@ lv_point_t locToCenterPxOffsetPx(Location loc, lv_point_t center_px, int zoom);
 
 float simpleDistance(Location& loc1, Location& loc2);
 
-float getRouteDistance(std::vector<Location>& route);
-
-struct NextTurn {
-  int angle;
-  int distance;
-};
-
-NextTurn getDistanceToNextTurn(const std::vector<Location>& route);
+int calculateAngle(Location p1, Location p2, Location p3);

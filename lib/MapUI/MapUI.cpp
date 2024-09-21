@@ -135,7 +135,7 @@ static unsigned long last_drag_ms = 0;
 static void updateMarkers(bool onlyMe = false);
 static void updateMap(bool force = false);
 static void updateRoute();
-static void drawButtons();
+static void updateButtons();
 static void onClickMarker(lv_event_t* e);
 static void changeMapCenter(Location newLoc, int newZoom);
 
@@ -211,7 +211,7 @@ static void changeMapCenter(Location newLoc, int newZoom) {
     updateMap();
     updateMarkers();
     updateRoute();
-    drawButtons();
+    updateButtons();
 }
 
 static void updateMarkers(bool onlyMe) {
@@ -267,7 +267,7 @@ static void updateMap(bool force) {
     }
 }
 
-static void drawButtons() {
+static void updateButtons() {
     if (zoom <= ZOOM_MIN) {
         disable(btn_zoom_out);
     } else {
@@ -465,7 +465,7 @@ static void onClickTile(lv_event_t* e) {
                 }
 
                 updateMarkers();
-                drawButtons();
+                updateButtons();
                 break;
             }
         }
@@ -495,11 +495,12 @@ static void onClickDelRoute(lv_event_t* e) {
     writeBootState({CURRENT_BM_VER, ModeMap, TransportAll, centerLoc, zoom, marker_me.loc, marker_target.loc});
     route.clear();
     distance = -1;
-    drawButtons();
+    updateButtons();
     lv_obj_del(line_route);
     lv_obj_del(lbl_distance);
     hide(btn_del_route);
     show(btn_route);
+    hide(btn_trip);
 }
 
 static void onClickSearch(lv_event_t* _) {

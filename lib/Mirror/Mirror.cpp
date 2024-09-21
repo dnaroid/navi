@@ -5,7 +5,6 @@
 #include <Mirror.h>
 #include <TFT_eSPI.h>
 #include <TJpg_Decoder.h>
-#include <Touch.h>
 #include <misc/lv_area.h>
 #include "WebSocketsServer.h"
 #include "UIHelpers.h"
@@ -22,33 +21,33 @@ lv_point_t btn_zoom_out;
 extern SemaphoreHandle_t xWireSemaphore;
 extern TFT_eSPI tft;
 extern CST816S touch;
-data_struct touch_data;
-NextTurn next_turn = {false, -1};
 
-auto sprite = TFT_eSprite(&tft);
-bool camEnabled = false;
-int camWsClientNumber = -1;
+static data_struct touch_data;
+static std::vector<RouteExt> route = {};
+static auto sprite = TFT_eSprite(&tft);
+static bool camEnabled = false;
+static int camWsClientNumber = -1;
 static int mirror_width;
 static int mirror_height;
-static std::vector<Location> route = {};
-static lv_point_t* route_px;
 static float distance = -1;
 static int zoom = ZOOM_TRIP;
 static WebSocketsServer webSocket(81);
 static bool serverReady = false;
 static bool spriteReady = false;
 static Location my_location;
+static int nextTurnAngle = 0;
+static float nextTurnDistance = -1;
 // cache
 static int mirror_center_x;
 static int mirror_center_y;
 static lv_point_t screenCenter;
 static lv_point_t centerPx;
-float rad_angle;
-float cosAngle;
-float sinAngle;
-float scale;
-char distanceText[20] = "\0";
-char turnText[20] = "\0";
+static float rad_angle;
+static float cosAngle;
+static float sinAngle;
+static float scale;
+static char distanceText[20] = "\0";
+static char turnText[20] = "\0";
 
 static lv_point_t mercatorProjection(Location loc) {
   int x = (loc.lon + 180.0) / 360.0 * scale;
@@ -68,46 +67,39 @@ static lv_point_t globalToScreenCoords(Location point) {
   return rotatePoint_({screenCenter.x + (pointPx.x - centerPx.x), screenCenter.y + (pointPx.y - centerPx.y)});
 }
 
-void drawArrow(int32_t x, int32_t y, int32_t r, int angle) {
-  int32_t startDeg;
-  int32_t endDeg;
-  int arrow_size = 4;
+static void drawArrow(int32_t x, int32_t y, int32_t r, int angle) {
+  angle = max(min(angle, 180), -180);
+  int startDeg = angle > 0 ? 90 : 270 + angle;
+  int endDeg = angle > 0 ? 90 + angle : 270;
+  int arrow_w = 5;
+  float arrow_l = angle > 0 ? -.5 : .5;
 
-  if (angle > 0) {
-    angle = min(angle, 180);
-    startDeg = 90;
-    endDeg = 90 + angle;
-  } else {
-    return;
-  }
+  sprite.drawArc(x, y, r + 1, r - 1, startDeg, endDeg, TFT_WHITE, TFT_BLACK);
 
-  sprite.drawArc(x, y, r, r - 2, startDeg % 360, endDeg % 360, TFT_WHITE, TFT_BLACK);
+  float endAngleRad = (angle > 0 ? 180 - angle : 180 - (180 + angle)) * PI / 180;
 
-  float endAngleRad = (180 - angle) * PI / 180;
+  float cosEndAngleRad = cos(endAngleRad);
+  float sinEndAngleRad = sin(endAngleRad);
 
-  int arrowTipX = x + (r - 1) * cos(endAngleRad - .3);
-  int arrowTipY = y - (r - 1) * sin(endAngleRad - .3);
+  int arrowTipX = x + r * cos(endAngleRad + arrow_l);
+  int arrowTipY = y - r * sin(endAngleRad + arrow_l);
 
-  int arrowBaseX1 = x + (r - 1 - arrow_size) * cos(endAngleRad);
-  int arrowBaseY1 = y - (r - 1 - arrow_size) * sin(endAngleRad);
+  int arrowBaseX1 = x + (r - arrow_w) * cosEndAngleRad;
+  int arrowBaseY1 = y - (r - arrow_w) * sinEndAngleRad;
 
-  int arrowBaseX2 = x + (r - 1 + arrow_size) * cos(endAngleRad);
-  int arrowBaseY2 = y - (r - 1 + arrow_size) * sin(endAngleRad);
+  int arrowBaseX2 = x + (r + arrow_w) * cosEndAngleRad;
+  int arrowBaseY2 = y - (r + arrow_w) * sinEndAngleRad;
 
   sprite.fillTriangle(arrowTipX, arrowTipY, arrowBaseX1, arrowBaseY1, arrowBaseX2, arrowBaseY2, TFT_WHITE);
 }
 
 static void drawText() {
-  sprite.drawString(distanceText, mirror_center_x - 25, btn_zoom_out.y);
+  sprite.drawString(distanceText, 50, btn_zoom_out.y);
 
-  if (next_turn.distance < 0) return;
-
-  sprite.drawString(turnText, 0, btn_exit.y);
-
-  drawArrow(30, 100, 20, 45);
-  drawArrow(150, 100, 20, 90);
-  drawArrow(30, 200, 20, 127);
-  drawArrow(150, 200, 20, 180);
+  if (nextTurnDistance > 0) {
+    sprite.drawString(turnText, 0, btn_exit.y);
+    drawArrow(17, 17, 10, nextTurnAngle);
+  }
 }
 
 static void drawButtons() {
@@ -127,55 +119,79 @@ static void drawMarker() {
                       UI_COLOR2);
 }
 
-static void updateRoute() {
+static void drawRoute() {
   const auto angle_fixed = -static_cast<int16_t>((static_cast<int>(compass_angle) + COMPASS_ANGLE_CORRECTION) % 360);
   rad_angle = angle_fixed * PI / 180.0;
   cosAngle = cos(rad_angle);
   sinAngle = sin(rad_angle);
-  for (int i = 0; i < route.size(); i++) {
-    route_px[i] = globalToScreenCoords(route[i]);
-  }
+
+  for (auto& i : route) i.px = globalToScreenCoords(i.point);
+
   for (int i = 0; i < route.size() - 1; ++i) {
-    sprite.drawLine(route_px[i].x, route_px[i].y, route_px[i + 1].x, route_px[i + 1].y, UI_COLOR);
-    int deltaX = route_px[i + 1].x - route_px[i].x;
-    int deltaY = route_px[i + 1].y - route_px[i].y;
-    lv_point_t offsetA = route_px[i];
-    lv_point_t offsetB = route_px[i + 1];
-    if (abs(deltaX) > abs(deltaY)) {
-      offsetA.y += 1;
-      offsetB.y += 1;
-    } else if (abs(deltaX) < abs(deltaY)) {
-      offsetA.x -= 1;
-      offsetB.x -= 1;
+    int x1 = route[i].px.x;
+    int y1 = route[i].px.y;
+    int x2 = route[i + 1].px.x;
+    int y2 = route[i + 1].px.y;
+    float distance = sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2));
+    int numCircles = distance / 10;
+    float dx = (x2 - x1) / distance;
+    float dy = (y2 - y1) / distance;
+
+    for (int j = 0; j <= numCircles; ++j) {
+      int x = x1 + dx * (j * 10);
+      int y = y1 + dy * (j * 10);
+      sprite.fillCircle(x, y, 2, UI_COLOR);
+      sprite.drawCircle(x, y, 3, UI_COLOR2);
     }
-    sprite.drawLine(offsetA.x, offsetA.y, offsetB.x, offsetB.y, UI_COLOR2);
   }
 }
 
 static void updateUI() {
-  updateRoute();
+  // auto ms = millis();
+  drawRoute();
   drawMarker();
   drawButtons();
   drawText();
+  // LOG(millis() - ms);
+}
+
+#define ANGLE_TOLERANCE     45
+#define MAX_DISTANCE_M   500.0
+
+static void findNextTurnIdx() {
+  nextTurnAngle = 0;
+  nextTurnDistance = -1.0;
+  for (int i = 0; i < route.size(); ++i) {
+    nextTurnDistance += route[i].distance;
+    if (nextTurnDistance > MAX_DISTANCE_M) {
+      nextTurnDistance = -1.0;
+      break;
+    };
+    if (abs(route[i].angle) >= ANGLE_TOLERANCE) {
+      nextTurnAngle = route[i].angle;
+      break;
+    };
+  }
 }
 
 static void updateMyLocation(Location new_location) {
   my_location = new_location;
   centerPx = mercatorProjection(my_location);
 
-  updateRouteProgress(my_location, route);
+  updateRouteExtProgress(my_location, route);
 
-  distance = getRouteDistance(route);
-  if (distance < 1.0) {
-    const int meters = static_cast<int>(distance * 1000);
-    snprintf(distanceText, sizeof(distanceText), " %d m ", meters);
+  distance = 0;
+  for (const auto r : route) distance += r.distance;
+
+  if (distance < 1000.0) {
+    snprintf(distanceText, sizeof(distanceText), " %d m ", static_cast<int>(distance));
   } else {
-    snprintf(distanceText, sizeof(distanceText), " %.1f km ", distance);
+    snprintf(distanceText, sizeof(distanceText), " %.1f km ", distance / 1000);
   }
 
-  next_turn = getDistanceToNextTurn(route);
-  if (next_turn.distance > 0) {
-    snprintf(turnText, sizeof(turnText), "     %dm ", next_turn.distance);
+  findNextTurnIdx();
+  if (nextTurnDistance > 0) {
+    snprintf(turnText, sizeof(turnText), "       %dm ", static_cast<int>(nextTurnDistance));
   }
 }
 
@@ -202,7 +218,7 @@ static void initRenderer() {
 static bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) {
   sprite.pushImage(x, y, w, h, bitmap);
   if (x + w >= mirror_width && y + h >= mirror_height) {
-    sprite.fillScreen(TFT_BLACK); // todo drbug
+    // sprite.fillScreen(TFT_BLACK); // todo debug
     updateUI();
     if (xSemaphoreTake(xWireSemaphore, portMAX_DELAY) == pdTRUE) {
       sprite.pushSprite(SCREEN_CENTER_X - mirror_width / 2, SCREEN_CENTER_Y - mirror_height / 2);
@@ -267,7 +283,21 @@ static void onPressZoomOut() {
   updateMyLocation(my_location);
 }
 
-Location DEBUG_moveOneMeterTowardsNextPoint(const Location& p1, const Location& p2) {
+static void processRoute(const std::vector<Location>& rawRoute) {
+  for (int i = 0; i < rawRoute.size(); i++) {
+    route.resize(rawRoute.size());
+    route[i].point = rawRoute[i];
+    if (i + 1 < rawRoute.size()) {
+      route[i].distance = getDistanceMeters(rawRoute[i], rawRoute[i + 1]);
+    }
+    if (i + 2 < rawRoute.size()) {
+      route[i].angle = calculateAngle(rawRoute[i], rawRoute[i + 1], rawRoute[i + 2]);
+    }
+    // LOG(route[i].distance, route[i].angle);
+  }
+}
+
+static Location DEBUG_moveOneMeterTowardsNextPoint(const Location& p1, const Location& p2) {
   float dLat = p2.lat - p1.lat;
   float dLon = (p2.lon - p1.lon) * cos(p1.lat * M_PI / 180.0);
   float distance = sqrt(dLat * dLat + dLon * dLon) * 111320;
@@ -291,10 +321,10 @@ static void onClick() {
   } else if (x < btn_zoom_out.x + TAP_ZONE && y > btn_zoom_out.y - TAP_ZONE && zoom > ZOOM_MIN) {
     onPressZoomOut();
   } else { // todo remove debug
-    if (simpleDistance(route[0], route[1]) < 0.002) { // todo remove debug
-      updateMyLocation(DEBUG_moveOneMeterTowardsNextPoint(route[1], route[2])); // todo remove debug
+    if (simpleDistance(route[0].point, route[1].point) < 0.002) { // todo remove debug
+      updateMyLocation(DEBUG_moveOneMeterTowardsNextPoint(route[1].point, route[2].point)); // todo remove debug
     } else { // todo remove debug
-      updateMyLocation(DEBUG_moveOneMeterTowardsNextPoint(route[0], route[1])); // todo remove debug
+      updateMyLocation(DEBUG_moveOneMeterTowardsNextPoint(route[0].point, route[1].point)); // todo remove debug
     } // todo remove debug
   } // todo remove debug
 }
@@ -312,8 +342,7 @@ void Mirror_server_init() {
 
 void Mirror_init(const BootState& state) {
   LOGI("Init Mirror");
-  route = state.route;
-  route_px = new lv_point_t[state.route.size()];
+  processRoute(state.route);
   distance = state.distance;
   my_location = state.start;
 

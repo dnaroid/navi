@@ -1,6 +1,7 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
 
+#include <misc/lv_area.h>
 #include "Arduino.h"
 
 #define LV_LVGL_H_INCLUDE_SIMPLE
@@ -23,6 +24,14 @@ struct Location {
   float lon;
   float lat;
 };
+
+struct RouteExt {
+  Location point;
+  float distance;
+  int angle;
+  lv_point_t px;
+};
+
 
 extern float compass_angle;
 extern Location my_gps_location;

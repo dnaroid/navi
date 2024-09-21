@@ -42,7 +42,7 @@ Transport getTransportByIdx(int index) {
   return TransportAll;
 }
 
-lv_obj_t* createBtn(const char* label, const int32_t x, const int32_t y, const lv_event_cb_t onClick, lv_color_t color = lv_color_white()) {
+lv_obj_t* createBtn(const char* label, const int32_t x, const int32_t y, const lv_event_cb_t onClick, lv_color_t color) {
   auto btn = lv_btn_create(lv_scr_act());
   lv_obj_set_size(btn, BUTTON_W, BUTTON_H);
   lv_obj_align(btn, LV_ALIGN_TOP_LEFT, x, y);
@@ -67,7 +67,7 @@ void highlight(lv_event_t* e) {
   }, 200, obj);
 }
 
-lv_obj_t* createStatusIcon(const char* label, const int32_t x, const int32_t y, const lv_event_cb_t onClick = nullptr) {
+lv_obj_t* createStatusIcon(const char* label, const int32_t x, const int32_t y, const lv_event_cb_t onClick) {
   const auto ico = lv_label_create(lv_scr_act());
   lv_obj_set_style_pad_hor(ico, 20, 0);
   lv_obj_set_style_pad_ver(ico, 5, 0);
@@ -278,9 +278,29 @@ ClosestEdge findClosestEdge(Location& my_location, const std::vector<Location>& 
   return closestEdge;
 }
 
+ClosestEdge findClosestEdge(Location& my_location, const std::vector<RouteExt>& route) {
+  ClosestEdge closestEdge;
+  closestEdge.distance = std::numeric_limits<float>::max();
+
+  for (int i = 0; i < route.size() - 1; ++i) {
+    Location p1 = route[i].point;
+    Location p2 = route[i + 1].point;
+    Location intersection;
+
+    float distance = pointToLineDistance(my_location, p1, p2, intersection);
+
+    if (distance < closestEdge.distance) {
+      closestEdge.edgeIndex = i;
+      closestEdge.intersection = intersection;
+      closestEdge.distance = distance;
+    }
+  }
+
+  return closestEdge;
+}
+
 void updateRouteProgress(Location& my_location, std::vector<Location>& route) {
   ClosestEdge closestEdge = findClosestEdge(my_location, route);
-  // LOG("Distance to edge:", closestEdge.distance);
   if (closestEdge.distance > TRIP_MODE_TOLERANCE_M) return;
   if (closestEdge.edgeIndex < route.size()) {
     route.erase(route.begin(), route.begin() + closestEdge.edgeIndex);
@@ -290,20 +310,22 @@ void updateRouteProgress(Location& my_location, std::vector<Location>& route) {
   }
 }
 
+void updateRouteExtProgress(Location& my_location, std::vector<RouteExt>& route) {
+  ClosestEdge closestEdge = findClosestEdge(my_location, route);
+  if (closestEdge.distance > TRIP_MODE_TOLERANCE_M) return;
+  if (closestEdge.edgeIndex < route.size()) {
+    route.erase(route.begin(), route.begin() + closestEdge.edgeIndex);
+  }
+  if (!route.empty()) {
+    route[0].point = closestEdge.intersection;
+    if (route.size() > 1) route[0].distance = getDistanceMeters(route[0].point, route[1].point);
+  }
+}
+
 float simpleDistance(Location& loc1, Location& loc2) {
   float dLat = loc2.lat - loc1.lat;
   float dLon = (loc2.lon - loc1.lon) * cos(loc1.lat * M_PI / 180.0);
   return sqrt(dLat * dLat + dLon * dLon) * 111.32;
-}
-
-float getRouteDistance(std::vector<Location>& route) {
-  float totalDistance = 0.0;
-
-  for (size_t i = 0; i < route.size() - 1; ++i) {
-    totalDistance += simpleDistance(route[i], route[i + 1]);
-  }
-
-  return totalDistance;
 }
 
 int calculateAngle(Location p1, Location p2, Location p3) {
@@ -312,40 +334,18 @@ int calculateAngle(Location p1, Location p2, Location p3) {
   float dLon2 = p3.lon - p2.lon;
   float dLat2 = p3.lat - p2.lat;
 
-  float angle = atan2(dLat2, dLon2) - atan2(dLat1, dLon1);
-  angle = static_cast<int>(angle * 180.0 / M_PI);
-  if (angle < 0) angle += 360;
-  return angle;
-}
+  float angle1 = atan2(dLat1, dLon1);
+  float angle2 = atan2(dLat2, dLon2);
 
-#define TURN_ANGLE_THRESHOLD    30.0
-#define TURN_DISTANCE_THRESHOLD 0.003
-#define TURN_MAX_DISTANCE       500
+  float angle = angle2 - angle1;
 
-struct NextTurn {
-  int angle;
-  int distance;
-};
+  angle = angle * 180.0 / M_PI;
 
-NextTurn getDistanceToNextTurn(const std::vector<Location>& route) {
-  float totalDistance = 0.0;
-
-  for (size_t i = 0; i < route.size() - 2; ++i) {
-    Location p1 = route[i];
-    Location p2 = route[i + 1];
-    Location p3 = route[i + 2];
-
-    float segmentDistance = simpleDistance(p1, p2);
-    totalDistance += segmentDistance;
-    if (segmentDistance < TURN_DISTANCE_THRESHOLD) continue;
-
-    if (totalDistance > TURN_MAX_DISTANCE) return {true, -1};
-
-    int angle = calculateAngle(p1, p2, p3);
-    if (angle >= TURN_ANGLE_THRESHOLD) {
-      return {angle, static_cast<int>(totalDistance * 1000)};
-    }
+  if (angle > 180) {
+    angle -= 360;
+  } else if (angle < -180) {
+    angle += 360;
   }
 
-  return {true, -1};
+  return static_cast<int>(-angle);
 }
