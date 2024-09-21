@@ -59,22 +59,22 @@ void updateCompassAndGpsTask(void* _) {
         compassSkips = 0;
       }
     }
-    // if (gpsSkips++ > GPS_UPD_SKIPS) {
-    //   while (gpsSerial.available() > 0) {
-    //     gps.encode(gpsSerial.read());
-    //   }
-    //   if (gps.location.isUpdated()) {
-    //     float gpsLat = gps.location.lat();
-    //     float gpsLon = gps.location.lng();
-    //     my_gps_location.lat = gpsLat;
-    //     my_gps_location.lon = gpsLon;
-    //   }
-    //   if (!gps.location.isValid()) {
-    //     my_gps_location.lat = 0;
-    //     my_gps_location.lon = 0;
-    //   }
-    //   gpsSkips = 0;
-    // }
+    if (gpsSkips++ > GPS_UPD_SKIPS) {
+      while (gpsSerial.available() > 0) {
+        gps.encode(gpsSerial.read());
+      }
+      if (gps.location.isUpdated()) {
+        float gpsLat = gps.location.lat();
+        float gpsLon = gps.location.lng();
+        my_gps_location.lat = gpsLat;
+        my_gps_location.lon = gpsLon;
+      }
+      if (!gps.location.isValid()) {
+        my_gps_location.lat = 0;
+        my_gps_location.lon = 0;
+      }
+      gpsSkips = 0;
+    }
     delay(10);
   }
 }

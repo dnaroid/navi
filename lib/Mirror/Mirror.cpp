@@ -20,6 +20,7 @@ lv_point_t btn_zoom_out;
 
 extern SemaphoreHandle_t xWireSemaphore;
 extern TFT_eSPI tft;
+extern Location my_gps_location;
 extern CST816S touch;
 
 static data_struct touch_data;
@@ -146,15 +147,6 @@ static void drawRoute() {
   }
 }
 
-static void updateUI() {
-  // auto ms = millis();
-  drawRoute();
-  drawMarker();
-  drawButtons();
-  drawText();
-  // LOG(millis() - ms);
-}
-
 #define ANGLE_TOLERANCE     45
 #define MAX_DISTANCE_M   500.0
 
@@ -193,6 +185,24 @@ static void updateMyLocation(Location new_location) {
   if (nextTurnDistance > 0) {
     snprintf(turnText, sizeof(turnText), "       %dm ", static_cast<int>(nextTurnDistance));
   }
+}
+
+#define GPS_TOLERANCE 0.002
+
+static void checkGpsLocation() {
+  if (my_gps_location.lat == 0 || simpleDistance(my_gps_location, my_location) < GPS_TOLERANCE) return;
+  updateMyLocation(my_gps_location);
+}
+
+
+static void updateUI() {
+  // auto ms = millis();
+  drawRoute();
+  drawMarker();
+  drawButtons();
+  drawText();
+  checkGpsLocation();
+  // LOG(millis() - ms);
 }
 
 static void initRenderer() {
